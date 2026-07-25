@@ -1,0 +1,19 @@
+# Build output
+build/
+CMakeLists.txt.user
+
+# Compiled shaders
+*.spv
+
+# Screenshots
+*.png
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
