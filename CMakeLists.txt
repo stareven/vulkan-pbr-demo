@@ -17,6 +17,16 @@ set(SOURCES
     src/pbr_shadow.cpp
     src/pbr_runtime.cpp
     src/pbr_cleanup.cpp
+    src/material_system.cpp
+    src/window.cpp
+    src/vulkan_context.cpp
+    src/sync_manager.cpp
+    src/swapchain_manager.cpp
+    src/render_pipeline.cpp
+    src/mesh_manager.cpp
+    src/descriptor_manager.cpp
+    src/command_manager.cpp
+    src/shadow_system.cpp
     src/vulkan_utils.cpp
     src/mesh.cpp
 )
