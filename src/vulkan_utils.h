@@ -45,3 +45,13 @@ void createBuffer(VkDevice dev, VkPhysicalDevice pd,
 
 void copyBuffer(VkDevice dev, VkQueue queue, VkCommandPool pool,
                 VkBuffer src, VkBuffer dst, VkDeviceSize size);
+
+// ============================================================================
+// 内存类型查找
+// ============================================================================
+uint32_t findMemoryType(VkPhysicalDevice pd, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+// ============================================================================
+// Shader Module 创建（简化版）
+// ============================================================================
+VkShaderModule createShaderModule(VkDevice dev, const std::vector<char>& code);

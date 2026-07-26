@@ -139,3 +139,27 @@ void copyBuffer(VkDevice dev, VkQueue queue, VkCommandPool pool,
 
     vkFreeCommandBuffers(dev, pool, 1, &cmd);
 }
+
+// ============================================================================
+// 内存类型查找
+// ============================================================================
+uint32_t findMemoryType(VkPhysicalDevice pd, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(pd, &memProperties);
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if ((typeFilter & (1 << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("failed to find suitable memory type!");
+}
+
+// ============================================================================
+// Shader Module 创建（简化版）
+// ============================================================================
+VkShaderModule createShaderModule(VkDevice dev, const std::vector<char>& code) {
+    return makeShaderModule(dev, code);
+}

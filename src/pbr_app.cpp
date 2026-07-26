@@ -7,10 +7,19 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <set>
 #include <stdexcept>
 #include <thread>
+
+PBRApp::PBRApp(int argc, char* argv[]) {
+    try {
+        exeDir = std::filesystem::canonical(argv[0]).parent_path();
+    } catch (...) {
+        exeDir = std::filesystem::current_path();
+    }
+}
 
 // ============================================================================
 // Window
@@ -21,8 +30,18 @@ void PBRApp::initWindow() {
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     window = glfwCreateWindow(WIDTH, HEIGHT, TITLE, nullptr, nullptr);
 
+    if (!window) {
+        throw std::runtime_error("Failed to create GLFW window");
+    }
+
     glfwShowWindow(window);
+    glfwFocusWindow(window);
     glfwPollEvents();
+
+#ifdef __APPLE__
+    // macOS: 确保窗口在前台显示
+    glfwSetWindowAttrib(window, GLFW_FLOATING, GLFW_FALSE);
+#endif
 
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, [](GLFWwindow* w, int, int) {
@@ -83,47 +102,32 @@ void PBRApp::initVulkan() {
     // Physical device
     {
         uint32_t n = 0;
-        VkResult enumResult = vkEnumeratePhysicalDevices(instance, &n, nullptr);
-        std::cout << "vkEnumeratePhysicalDevices result: " << enumResult
-                  << ", count: " << n << "\n";
-        if (n == 0) {
-            std::cerr << "ERROR: no Vulkan physical devices found!\n";
-            throw std::runtime_error("no suitable GPU");
-        }
+        vkEnumeratePhysicalDevices(instance, &n, nullptr);
+        if (n == 0) throw std::runtime_error("no suitable GPU");
         std::vector<VkPhysicalDevice> devs(n);
         vkEnumeratePhysicalDevices(instance, &n, devs.data());
         for (auto d : devs) {
             VkPhysicalDeviceProperties dp;
             vkGetPhysicalDeviceProperties(d, &dp);
-            std::cout << "Found device: " << dp.deviceName << "\n";
+            std::cout << "Found device: " << dp.deviceName << "\n" << std::flush;
 
             uint32_t eN = 0;
             vkEnumerateDeviceExtensionProperties(d, nullptr, &eN, nullptr);
             std::vector<VkExtensionProperties> eP(eN);
             vkEnumerateDeviceExtensionProperties(d, nullptr, &eN, eP.data());
-            std::cout << "  Extensions: " << eN << "\n";
 
             std::set<std::string> req(DEVICE_EXTENSIONS.begin(), DEVICE_EXTENSIONS.end());
             for (auto& e : eP) req.erase(e.extensionName);
-            if (!req.empty()) {
-                std::cout << "  Missing extensions:\n";
-                for (auto& r : req) std::cout << "    - " << r << "\n";
-                continue;
-            }
+            if (!req.empty()) continue;
             pd = d;
-            std::cout << "  Selected!\n";
             break;
         }
         if (!pd) throw std::runtime_error("no suitable GPU");
     }
-    std::cerr << "[DEBUG] Physical device selected\n";
-    std::cerr.flush();
 
     // Surface
     if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
         throw std::runtime_error("surface creation failed");
-    std::cerr << "[DEBUG] Surface created\n";
-    std::cerr.flush();
 
     // Logical device
     {
@@ -134,29 +138,14 @@ void PBRApp::initVulkan() {
 
         uint32_t gfxFamily = UINT32_MAX;
         uint32_t presentFamily = UINT32_MAX;
-        std::cerr << "[DEBUG] Checking " << qfCount << " queue families...\n";
         for (uint32_t i = 0; i < qfCount; i++) {
-            std::cerr << "[DEBUG] Queue family " << i << ": flags=" << std::hex
-                      << qfProps[i].queueFlags << std::dec << "\n";
-            if (qfProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                gfxFamily = i;
-                std::cerr << "[DEBUG]   -> Graphics queue\n";
-            }
+            if (qfProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) gfxFamily = i;
             VkBool32 presentSupport = VK_FALSE;
-            VkResult surfResult =
-                vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, surface, &presentSupport);
-            std::cerr << "[DEBUG]   -> Surface support query result: " << surfResult
-                      << ", support: " << presentSupport << "\n";
+            vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, surface, &presentSupport);
             if (presentSupport) presentFamily = i;
         }
-        if (gfxFamily == UINT32_MAX)
-            throw std::runtime_error("no graphics queue family");
-
-        if (presentFamily == UINT32_MAX) {
-            std::cerr << "[DEBUG] No present queue found, using graphics queue ("
-                      << gfxFamily << ")\n";
-            presentFamily = gfxFamily;
-        }
+        if (gfxFamily == UINT32_MAX) throw std::runtime_error("no graphics queue family");
+        if (presentFamily == UINT32_MAX) presentFamily = gfxFamily;
 
         std::set<uint32_t> uq{gfxFamily, presentFamily};
         std::vector<VkDeviceQueueCreateInfo> qci;
@@ -178,50 +167,43 @@ void PBRApp::initVulkan() {
         dci.enabledExtensionCount = (uint32_t)DEVICE_EXTENSIONS.size();
         dci.ppEnabledExtensionNames = DEVICE_EXTENSIONS.data();
 
-        std::cerr << "[DEBUG] About to create logical device...\n";
-        std::cerr.flush();
-        VkResult devResult = vkCreateDevice(pd, &dci, nullptr, &device);
-        std::cerr << "[DEBUG] vkCreateDevice result: " << devResult << "\n";
-        std::cerr.flush();
-        if (devResult != VK_SUCCESS)
+        if (vkCreateDevice(pd, &dci, nullptr, &device) != VK_SUCCESS)
             throw std::runtime_error("logical device creation failed");
 
         vkGetDeviceQueue(device, gfxFamily, 0, &gfxQueue);
         vkGetDeviceQueue(device, presentFamily, 0, &presQueue);
     }
-    std::cerr << "[DEBUG] Logical device created\n" << std::flush;
 
-    std::cerr << "[DEBUG] creating swapchain...\n" << std::flush;
     createSwapchain();
-    std::cerr << "[DEBUG] swapchain done\n" << std::flush;
     createImageViews();
-    std::cerr << "[DEBUG] image views done\n" << std::flush;
     createDepthBuffer();
-    std::cerr << "[DEBUG] depth buffer done\n" << std::flush;
     createRenderPass();
-    std::cerr << "[DEBUG] render pass done\n" << std::flush;
     createDescriptorLayouts();
-    std::cerr << "[DEBUG] descriptor layouts done\n" << std::flush;
+
+    // Shadow map resources (需要 descriptor layout 在 graphics pipeline 之前)
+    createShadowMap();
+    createShadowRenderPass();
+    createShadowDescriptorLayout();
+    createShadowSampler();
+    createShadowSamplerDescriptorLayout();
+
     createGraphicsPipeline();
-    std::cerr << "[DEBUG] graphics pipeline done\n" << std::flush;
+    createShadowPipeline();
+    createShadowFramebuffer();
     createFramebuffers();
-    std::cerr << "[DEBUG] framebuffers done\n" << std::flush;
     createCommandPool();
-    std::cerr << "[DEBUG] command pool done\n" << std::flush;
     createMesh();
-    std::cerr << "[DEBUG] mesh done\n" << std::flush;
+
     createUniformBuffers();
-    std::cerr << "[DEBUG] uniform buffers done\n" << std::flush;
-    createDescriptorPool();
-    std::cerr << "[DEBUG] descriptor pool done\n" << std::flush;
-    createDescriptorSets();
-    std::cerr << "[DEBUG] descriptor sets done\n" << std::flush;
-    createCommandBuffers();
-    std::cerr << "[DEBUG] command buffers done\n" << std::flush;
+
+    // 需要先创建 sync objects 来获取 imageCount
     createSyncObjects();
-    std::cerr << "[DEBUG] sync objects done\n" << std::flush;
-    std::cerr << "[DEBUG] About to enter mainLoop...\n" << std::flush;
-    std::cerr << "[DEBUG] Init complete!\n" << std::flush;
+
+    createDescriptorPool();
+    createDescriptorSets();
+    createShadowDescriptorSets();
+    createShadowSamplerDescriptorSets();
+    createCommandBuffers();
 }
 
 // ============================================================================
@@ -440,13 +422,26 @@ void PBRApp::createRenderPass() {
 // Descriptor layouts
 // ============================================================================
 void PBRApp::createDescriptorLayouts() {
-    // 空layout，不绑定任何UBO
+    // set 0 = MVP (vertex shader)
+    VkDescriptorSetLayoutBinding b0{};
+    b0.binding = 0;
+    b0.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    b0.descriptorCount = 1;
+    b0.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     VkDescriptorSetLayoutCreateInfo li{};
     li.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    li.bindingCount = 0;
-    li.pBindings = nullptr;
+    li.bindingCount = 1;
+    li.pBindings = &b0;
     if (vkCreateDescriptorSetLayout(device, &li, nullptr, &dslMVP) != VK_SUCCESS)
         throw std::runtime_error("dsl mvp failed");
+
+    // set 1 = Material (fragment shader)
+    VkDescriptorSetLayoutBinding b1{};
+    b1.binding = 0;
+    b1.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    b1.descriptorCount = 1;
+    b1.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    li.pBindings = &b1;
     if (vkCreateDescriptorSetLayout(device, &li, nullptr, &dslMat) != VK_SUCCESS)
         throw std::runtime_error("dsl mat failed");
 }
@@ -455,8 +450,8 @@ void PBRApp::createDescriptorLayouts() {
 // Graphics pipeline
 // ============================================================================
 void PBRApp::createGraphicsPipeline() {
-    auto vs = readFile("shaders/shader.vert.spv");
-    auto fs = readFile("shaders/shader.frag.spv");
+    auto vs = readFile(exeDir.parent_path().string() + "/shaders/shader.vert.spv");
+    auto fs = readFile(exeDir.parent_path().string() + "/shaders/shader.frag.spv");
     auto vsm = makeShaderModule(device, vs);
     auto fsm = makeShaderModule(device, fs);
 
@@ -470,13 +465,19 @@ void PBRApp::createGraphicsPipeline() {
     stages[1].module = fsm;
     stages[1].pName = "main";
 
-    // Vertex input - 不使用，完全依赖 gl_VertexIndex
+    // Vertex input
+    VkVertexInputBindingDescription bib = {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
+    VkVertexInputAttributeDescription aib[3] = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)},
+        {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)},
+        {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)},
+    };
     VkPipelineVertexInputStateCreateInfo vici{};
     vici.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vici.vertexBindingDescriptionCount = 0;
-    vici.pVertexBindingDescriptions = nullptr;
-    vici.vertexAttributeDescriptionCount = 0;
-    vici.pVertexAttributeDescriptions = nullptr;
+    vici.vertexBindingDescriptionCount = 1;
+    vici.pVertexBindingDescriptions = &bib;
+    vici.vertexAttributeDescriptionCount = 3;
+    vici.pVertexAttributeDescriptions = aib;
 
     VkPipelineInputAssemblyStateCreateInfo iaci{};
     iaci.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -499,7 +500,8 @@ void PBRApp::createGraphicsPipeline() {
 
     VkPipelineDepthStencilStateCreateInfo dsci{};
     dsci.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    dsci.depthTestEnable = dsci.depthWriteEnable = VK_TRUE;
+    dsci.depthTestEnable = VK_TRUE;
+    dsci.depthWriteEnable = VK_TRUE;
     dsci.depthCompareOp = VK_COMPARE_OP_LESS;
 
     VkPipelineColorBlendAttachmentState cba{};
@@ -523,10 +525,11 @@ void PBRApp::createGraphicsPipeline() {
     dsci2.dynamicStateCount = (uint32_t)ds.size();
     dsci2.pDynamicStates = ds.data();
 
+    VkDescriptorSetLayout layouts[] = {dslMVP, dslMat, dslShadowSampler};
     VkPipelineLayoutCreateInfo pli{};
     pli.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pli.setLayoutCount = 0;
-    pli.pSetLayouts = nullptr;
+    pli.setLayoutCount = 3;
+    pli.pSetLayouts = layouts;
     if (vkCreatePipelineLayout(device, &pli, nullptr, &pipelineLayout) != VK_SUCCESS)
         throw std::runtime_error("pipeline layout failed");
 
@@ -583,23 +586,33 @@ void PBRApp::createCommandPool() {
 // Mesh
 // ============================================================================
 void PBRApp::createMesh() {
-    auto verts = generateTriangle();
-    auto idxs = generateTriangleIndices();
+    auto verts = generateSphere(32, 64);
+    auto idxs = generateSphereIndices(32, 64);
     indexCount = (uint32_t)idxs.size();
+    std::cout << "[MESH] vertices=" << verts.size() << " indices=" << idxs.size() << "\n" << std::flush;
 
     VkDeviceSize vboSz = verts.size() * sizeof(Vertex);
     VkDeviceSize iboSz = idxs.size() * sizeof(uint32_t);
 
-    VkBuffer stg;
-    VkDeviceMemory stgMem;
-    createBuffer(device, pd, vboSz + iboSz, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, stg, stgMem);
-    void* mapped;
-    vkMapMemory(device, stgMem, 0, vboSz + iboSz, 0, &mapped);
-    std::memcpy(mapped, verts.data(), vboSz);
-    std::memcpy((char*)mapped + vboSz, idxs.data(), iboSz);
-    vkUnmapMemory(device, stgMem);
+    // 顶点 staging buffer
+    VkBuffer stgV; VkDeviceMemory stgVM;
+    createBuffer(device, pd, vboSz, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, stgV, stgVM);
+    void* mappedV;
+    vkMapMemory(device, stgVM, 0, vboSz, 0, &mappedV);
+    std::memcpy(mappedV, verts.data(), vboSz);
+    vkUnmapMemory(device, stgVM);
 
+    // 索引 staging buffer
+    VkBuffer stgI; VkDeviceMemory stgIM;
+    createBuffer(device, pd, iboSz, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, stgI, stgIM);
+    void* mappedI;
+    vkMapMemory(device, stgIM, 0, iboSz, 0, &mappedI);
+    std::memcpy(mappedI, idxs.data(), iboSz);
+    vkUnmapMemory(device, stgIM);
+
+    // Device-local buffers
     createBuffer(device, pd, vboSz,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vbo, vboMem);
@@ -607,11 +620,46 @@ void PBRApp::createMesh() {
                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, ibo, iboMem);
 
-    copyBuffer(device, gfxQueue, cmdPool, stg, vbo, vboSz);
-    copyBuffer(device, gfxQueue, cmdPool, stg, ibo, iboSz);
+    copyBuffer(device, gfxQueue, cmdPool, stgV, vbo, vboSz);
+    copyBuffer(device, gfxQueue, cmdPool, stgI, ibo, iboSz);
 
-    vkDestroyBuffer(device, stg, nullptr);
-    vkFreeMemory(device, stgMem, nullptr);
+    vkDestroyBuffer(device, stgV, nullptr);
+    vkFreeMemory(device, stgVM, nullptr);
+    vkDestroyBuffer(device, stgI, nullptr);
+    vkFreeMemory(device, stgIM, nullptr);
+
+    // 地面平面（用于接收阴影）
+    auto planeVerts = generatePlane(10.0f, -1.5f);
+    auto planeIdxs = generatePlaneIndices();
+    planeIndexCount = (uint32_t)planeIdxs.size();
+
+    VkDeviceSize pvboSz = planeVerts.size() * sizeof(Vertex);
+    VkDeviceSize piboSz = planeIdxs.size() * sizeof(uint32_t);
+
+    VkBuffer stgPV; VkDeviceMemory stgPVM;
+    createBuffer(device, pd, pvboSz, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, stgPV, stgPVM);
+    void* mPV; vkMapMemory(device, stgPVM, 0, pvboSz, 0, &mPV);
+    std::memcpy(mPV, planeVerts.data(), pvboSz); vkUnmapMemory(device, stgPVM);
+
+    VkBuffer stgPI; VkDeviceMemory stgPIM;
+    createBuffer(device, pd, piboSz, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, stgPI, stgPIM);
+    void* mPI; vkMapMemory(device, stgPIM, 0, piboSz, 0, &mPI);
+    std::memcpy(mPI, planeIdxs.data(), piboSz); vkUnmapMemory(device, stgPIM);
+
+    createBuffer(device, pd, pvboSz,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, planeVbo, planeVboMem);
+    createBuffer(device, pd, piboSz,
+                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, planeIbo, planeIboMem);
+
+    copyBuffer(device, gfxQueue, cmdPool, stgPV, planeVbo, pvboSz);
+    copyBuffer(device, gfxQueue, cmdPool, stgPI, planeIbo, piboSz);
+
+    vkDestroyBuffer(device, stgPV, nullptr); vkFreeMemory(device, stgPVM, nullptr);
+    vkDestroyBuffer(device, stgPI, nullptr); vkFreeMemory(device, stgPIM, nullptr);
 }
 
 // ============================================================================
@@ -635,20 +683,52 @@ void PBRApp::createUniformBuffers() {
 // ============================================================================
 void PBRApp::createDescriptorPool() {
     VkDescriptorPoolSize sizes[] = {
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, (uint32_t)(MAX_FRAMES_IN_FLIGHT * 2)}};
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, (uint32_t)(MAX_FRAMES_IN_FLIGHT * 3)},  // MVP + Material + Shadow
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, (uint32_t)imageCount}  // Shadow map
+    };
     VkDescriptorPoolCreateInfo dpi{};
     dpi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    dpi.maxSets = MAX_FRAMES_IN_FLIGHT * 2;
-    dpi.poolSizeCount = 1;
+    dpi.maxSets = MAX_FRAMES_IN_FLIGHT * 3 + (uint32_t)imageCount;
+    dpi.poolSizeCount = 2;
     dpi.pPoolSizes = sizes;
     if (vkCreateDescriptorPool(device, &dpi, nullptr, &descPool) != VK_SUCCESS)
         throw std::runtime_error("descriptor pool failed");
 }
 
 void PBRApp::createDescriptorSets() {
-    // 跳过，不再使用 descriptor sets
-    descSetsMVP.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
-    descSetsMat.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
+    descSetsMVP.resize(MAX_FRAMES_IN_FLIGHT);
+    descSetsMat.resize(MAX_FRAMES_IN_FLIGHT);
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        VkDescriptorSetAllocateInfo ai{};
+        ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        ai.descriptorPool = descPool;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &dslMVP;
+        if (vkAllocateDescriptorSets(device, &ai, &descSetsMVP[i]) != VK_SUCCESS)
+            throw std::runtime_error("alloc mvp desc set failed");
+
+        VkDescriptorBufferInfo bi{};
+        bi.buffer = uboMVPBuf[i];
+        bi.range = sizeof(UBO_MVP);
+        VkWriteDescriptorSet w{};
+        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w.dstSet = descSetsMVP[i];
+        w.dstBinding = 0;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        w.descriptorCount = 1;
+        w.pBufferInfo = &bi;
+        vkUpdateDescriptorSets(device, 1, &w, 0, nullptr);
+
+        ai.pSetLayouts = &dslMat;
+        if (vkAllocateDescriptorSets(device, &ai, &descSetsMat[i]) != VK_SUCCESS)
+            throw std::runtime_error("alloc mat desc set failed");
+
+        bi.buffer = uboMatBuf[i];
+        bi.range = sizeof(UBO_Material);
+        w.dstSet = descSetsMat[i];
+        w.pBufferInfo = &bi;
+        vkUpdateDescriptorSets(device, 1, &w, 0, nullptr);
+    }
 }
 
 // ============================================================================
@@ -663,6 +743,11 @@ void PBRApp::createCommandBuffers() {
     ai.commandBufferCount = (uint32_t)cmdBuffers.size();
     if (vkAllocateCommandBuffers(device, &ai, cmdBuffers.data()) != VK_SUCCESS)
         throw std::runtime_error("command buffer alloc failed");
+
+    // 创建 Shadow 专用 command buffer
+    ai.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(device, &ai, &shadowCmdBuffer) != VK_SUCCESS)
+        throw std::runtime_error("shadow command buffer alloc failed");
 }
 
 void PBRApp::recordCommandBuffer(uint32_t imgIdx) {
@@ -674,7 +759,7 @@ void PBRApp::recordCommandBuffer(uint32_t imgIdx) {
     vkBeginCommandBuffer(cmd, &bi);
 
     VkClearValue clears[2];
-    clears[0].color = {{0.2f, 0.02f, 0.03f, 1.0f}};
+    clears[0].color = {{0.02f, 0.02f, 0.05f, 1.0f}};
     clears[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo rpi{};
@@ -688,12 +773,29 @@ void PBRApp::recordCommandBuffer(uint32_t imgIdx) {
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
+    // 绑定 descriptor sets (set 0 = MVP, set 1 = Material, set 2 = Shadow Sampler)
+    uint32_t shadowSamplerIdx = imgIdx % imageCount;
+    VkDescriptorSet descSets[] = {descSetsMVP[frameIdx], descSetsMat[frameIdx], descSetsShadowSampler[shadowSamplerIdx]};
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+                            0, 3, descSets, 0, nullptr);
+
     VkViewport vp{0, 0, (float)scExtent.width, (float)scExtent.height, 0, 1};
     vkCmdSetViewport(cmd, 0, 1, &vp);
     VkRect2D sc{{0, 0}, scExtent};
     vkCmdSetScissor(cmd, 0, 1, &sc);
 
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+    // 画球体
+    VkBuffer vertexBuffers[] = {vbo};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(cmd, ibo, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
+
+    // 画地面（接收阴影，复用同一材质）
+    VkBuffer planeBuffers[] = {planeVbo};
+    vkCmdBindVertexBuffers(cmd, 0, 1, planeBuffers, offsets);
+    vkCmdBindIndexBuffer(cmd, planeIbo, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, planeIndexCount, 1, 0, 0, 0);
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
@@ -703,19 +805,400 @@ void PBRApp::recordCommandBuffer(uint32_t imgIdx) {
 // Sync
 // ============================================================================
 void PBRApp::createSyncObjects() {
-    semImgAvail.resize(MAX_FRAMES_IN_FLIGHT);
-    semRendDone.resize(MAX_FRAMES_IN_FLIGHT);
+    // 为每个 swapchain 图像创建 semaphore（避免重用冲突）
+    imageCount = (uint32_t)scImages.size();
+    semImgAvail.resize(imageCount);
+    semRendDone.resize(imageCount);
+    // fence 仍然按 MAX_FRAMES_IN_FLIGHT 创建（用于帧 pacing）
     fences.resize(MAX_FRAMES_IN_FLIGHT);
     VkSemaphoreCreateInfo sci{};
     sci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     VkFenceCreateInfo fci{};
     fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (uint32_t i = 0; i < imageCount; ++i) {
         if (vkCreateSemaphore(device, &sci, nullptr, &semImgAvail[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &sci, nullptr, &semRendDone[i]) != VK_SUCCESS ||
-            vkCreateFence(device, &fci, nullptr, &fences[i]) != VK_SUCCESS)
+            vkCreateSemaphore(device, &sci, nullptr, &semRendDone[i]) != VK_SUCCESS)
             throw std::runtime_error("sync object creation failed");
+    }
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        if (vkCreateFence(device, &fci, nullptr, &fences[i]) != VK_SUCCESS)
+            throw std::runtime_error("fence creation failed");
+    }
+}
+
+// ============================================================================
+// Shadow Map
+// ============================================================================
+void PBRApp::createShadowMap() {
+    // 创建深度图像
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = SHADOW_MAP_SIZE;
+    imageInfo.extent.height = SHADOW_MAP_SIZE;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_D32_SFLOAT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(device, &imageInfo, nullptr, &shadowMapImage) != VK_SUCCESS)
+        throw std::runtime_error("failed to create shadow map image!");
+
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(device, shadowMapImage, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(pd, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &shadowMapMemory) != VK_SUCCESS)
+        throw std::runtime_error("failed to allocate shadow map memory!");
+
+    vkBindImageMemory(device, shadowMapImage, shadowMapMemory, 0);
+
+    // 创建 Image View
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = shadowMapImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_D32_SFLOAT;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    if (vkCreateImageView(device, &viewInfo, nullptr, &shadowMapImageView) != VK_SUCCESS)
+        throw std::runtime_error("failed to create shadow map image view!");
+}
+
+void PBRApp::createShadowRenderPass() {
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = VK_FORMAT_D32_SFLOAT;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;  // 必须保留供主 pass 采样
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+    VkAttachmentReference depthRef{};
+    depthRef.attachment = 0;
+    depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.pDepthStencilAttachment = &depthRef;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &depthAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+
+    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &shadowMapRenderPass) != VK_SUCCESS)
+        throw std::runtime_error("failed to create shadow render pass!");
+}
+
+void PBRApp::createShadowPipeline() {
+    // 加载阴影着色器
+    auto vertShaderCode = readFile(exeDir.parent_path().string() + "/shaders/shadow.vert.spv");
+    VkShaderModule vertShaderModule = makeShaderModule(device, vertShaderCode);
+
+    VkPipelineShaderStageCreateInfo vertStageInfo{};
+    vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertStageInfo.module = vertShaderModule;
+    vertStageInfo.pName = "main";
+
+    // 顶点输入（仅位置）
+    VkVertexInputBindingDescription bindingDescription{};
+    bindingDescription.binding = 0;
+    bindingDescription.stride = sizeof(Vertex);
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attributeDescription{};
+    attributeDescription.binding = 0;
+    attributeDescription.location = 0;
+    attributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescription.offset = offsetof(Vertex, pos);
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = 1;
+    vertexInputInfo.pVertexAttributeDescriptions = &attributeDescription;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;  // 剔除正面，减少阴影 acne
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_TRUE;
+    rasterizer.depthBiasConstantFactor = 1.25f;
+    rasterizer.depthBiasClamp = 0.0f;
+    rasterizer.depthBiasSlopeFactor = 1.75f;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 0;
+
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = (uint32_t)dynamicStates.size();
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &dslShadow;
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &shadowMapPipelineLayout) != VK_SUCCESS)
+        throw std::runtime_error("failed to create shadow pipeline layout!");
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 1;
+    pipelineInfo.pStages = &vertStageInfo;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = shadowMapPipelineLayout;
+    pipelineInfo.renderPass = shadowMapRenderPass;
+    pipelineInfo.subpass = 0;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowMapPipeline) != VK_SUCCESS)
+        throw std::runtime_error("failed to create shadow pipeline!");
+
+    vkDestroyShaderModule(device, vertShaderModule, nullptr);
+}
+
+void PBRApp::createShadowFramebuffer() {
+    VkImageView attachments[] = { shadowMapImageView };
+
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = shadowMapRenderPass;
+    framebufferInfo.attachmentCount = 1;
+    framebufferInfo.pAttachments = attachments;
+    framebufferInfo.width = SHADOW_MAP_SIZE;
+    framebufferInfo.height = SHADOW_MAP_SIZE;
+    framebufferInfo.layers = 1;
+
+    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &shadowMapFramebuffer) != VK_SUCCESS)
+        throw std::runtime_error("failed to create shadow framebuffer!");
+}
+
+void PBRApp::createShadowDescriptorLayout() {
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &dslShadow) != VK_SUCCESS)
+        throw std::runtime_error("failed to create shadow descriptor set layout!");
+}
+
+void PBRApp::createShadowDescriptorSets() {
+    uboShadowBuf.resize(MAX_FRAMES_IN_FLIGHT);
+    uboShadowMem.resize(MAX_FRAMES_IN_FLIGHT);
+    descSetsShadow.resize(MAX_FRAMES_IN_FLIGHT);
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &dslShadow;
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        createBuffer(device, pd, sizeof(UBO_Shadow), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, uboShadowBuf[i], uboShadowMem[i]);
+
+        vkAllocateDescriptorSets(device, &allocInfo, &descSetsShadow[i]);
+
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = uboShadowBuf[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UBO_Shadow);
+
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descSetsShadow[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrite.pBufferInfo = &bufferInfo;
+
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+    }
+}
+
+void PBRApp::recordShadowCommandBuffer() {
+    VkCommandBuffer cmd = shadowCmdBuffer;
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = shadowMapRenderPass;
+    renderPassInfo.framebuffer = shadowMapFramebuffer;
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
+
+    VkClearValue clearValue{};
+    clearValue.depthStencil = {1.0f, 0};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearValue;
+
+    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float)SHADOW_MAP_SIZE;
+    viewport.height = (float)SHADOW_MAP_SIZE;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineLayout,
+                            0, 1, &descSetsShadow[frameIdx], 0, nullptr);
+
+    VkBuffer vertexBuffers[] = { vbo };
+    VkDeviceSize offsets[] = { 0 };
+    vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(cmd, ibo, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, indexCount, 1, 0, 0, 0);
+
+    vkCmdEndRenderPass(cmd);
+    vkEndCommandBuffer(cmd);
+}
+
+void PBRApp::createShadowSampler() {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    // MoltenVK 不支持比较采样器，使用普通采样
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &shadowSampler) != VK_SUCCESS)
+        throw std::runtime_error("failed to create shadow sampler!");
+}
+
+void PBRApp::createShadowSamplerDescriptorLayout() {
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 0;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &samplerLayoutBinding;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &dslShadowSampler) != VK_SUCCESS)
+        throw std::runtime_error("failed to create shadow sampler descriptor set layout!");
+}
+
+void PBRApp::createShadowSamplerDescriptorSets() {
+    descSetsShadowSampler.resize(imageCount);
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &dslShadowSampler;
+
+    for (uint32_t i = 0; i < imageCount; i++) {
+        vkAllocateDescriptorSets(device, &allocInfo, &descSetsShadowSampler[i]);
+
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = shadowMapImageView;
+        imageInfo.sampler = shadowSampler;
+
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descSetsShadowSampler[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite.pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
     }
 }
 
@@ -735,11 +1218,25 @@ void PBRApp::updateUBOs() {
     Mat4 proj = Mat4::perspective(45.0f * M_PI / 180.0f, aspect, 0.1f, 100.0f);
     Mat4 model = Mat4::identity();
 
-    UBO_MVP mvp{model, view, proj, camPos};
+    // 光源空间矩阵（主光源在 (10,10,10) 看向原点）
+    Vec3 lightPos{10, 10, 10};
+    lightView = Mat4::lookAt(lightPos, Vec3(0, 0, 0), Vec3(0, 1, 0));
+    lightProj = Mat4::ortho(-8, 8, -8, 8, 0.1f, 50.0f);
+    Mat4 lightSpaceMatrix = lightProj * lightView;
+
+    // C++ 是 row-major，GLSL 是 column-major，需要转置
+    UBO_MVP mvp{model.transposed(), view.transposed(), proj.transposed(),
+                lightSpaceMatrix.transposed(), camPos, 0.0f};
     void* p;
     vkMapMemory(device, uboMVPMem[frameIdx], 0, sizeof(mvp), 0, &p);
     std::memcpy(p, &mvp, sizeof(mvp));
     vkUnmapMemory(device, uboMVPMem[frameIdx]);
+
+    // 更新 Shadow UBO（光源空间矩阵，用于 shadow pass 顶点变换）
+    UBO_Shadow shadowUBO{lightSpaceMatrix.transposed(), lightPos, 0.0f};
+    vkMapMemory(device, uboShadowMem[frameIdx], 0, sizeof(shadowUBO), 0, &p);
+    std::memcpy(p, &shadowUBO, sizeof(shadowUBO));
+    vkUnmapMemory(device, uboShadowMem[frameIdx]);
 
     struct MatPreset {
         Vec3 albedo;
@@ -770,10 +1267,10 @@ void PBRApp::updateUBOs() {
     }
     mat.cameraPos = camPos;
     mat.ambientLight = {0.03f, 0.03f, 0.03f};
-    mat.lights[0] = {{10, 10, 10}, {300, 300, 300}, 1.0f};
-    mat.lights[1] = {{-10, 10, 10}, {300, 100, 100}, 1.0f};
-    mat.lights[2] = {{10, -10, -10}, {100, 300, 100}, 1.0f};
-    mat.lights[3] = {{-10, -10, -10}, {100, 100, 300}, 1.0f};
+    mat.lights[0] = {{10, 10, 10}, 0.0f, {300, 300, 300}, 1.0f};
+    mat.lights[1] = {{-10, 10, 10}, 0.0f, {300, 100, 100}, 1.0f};
+    mat.lights[2] = {{10, -10, -10}, 0.0f, {100, 300, 100}, 1.0f};
+    mat.lights[3] = {{-10, -10, -10}, 0.0f, {100, 100, 300}, 1.0f};
 
     if (emissiveEnabled) {
         mat.emissive = {1.0f, 0.5f, 0.1f};
@@ -792,11 +1289,7 @@ void PBRApp::updateUBOs() {
 // Main loop / draw
 // ============================================================================
 void PBRApp::mainLoop() {
-    std::cout << "Entering main loop...\n" << std::flush;
-    int loopCount = 0;
     while (!glfwWindowShouldClose(window)) {
-        loopCount++;
-        if (loopCount % 100 == 0) std::cout << "Loop iteration " << loopCount << "\n" << std::flush;
         glfwPollEvents();
 
         float dt = 0.016f;
@@ -811,6 +1304,15 @@ void PBRApp::mainLoop() {
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camPos = camPos + right * speed;
         if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) camPos.y -= speed;
         if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) camPos.y += speed;
+
+        // 材质切换 (M)
+        static bool mLast = false;
+        bool mNow = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS;
+        if (mNow && !mLast) {
+            matPreset = (matPreset + 1) % 7;
+            std::cout << "Material preset: " << matPreset << "\n";
+        }
+        mLast = mNow;
 
         // 玻璃 (G)
         static bool gLast = false;
@@ -837,16 +1339,6 @@ void PBRApp::mainLoop() {
 }
 
 void PBRApp::drawFrame() {
-    static int frameCount = 0;
-    if (frameCount == 0) {
-        std::cout << "First drawFrame() call\n";
-        std::cout << "Camera position: " << camPos.x << ", " << camPos.y << ", " << camPos.z << "\n";
-    }
-    if (frameCount % 60 == 0) {
-        std::cout << "Frame " << frameCount << "\n";
-    }
-    frameCount++;
-
     vkWaitForFences(device, 1, &fences[frameIdx], VK_TRUE, UINT64_MAX);
 
     uint32_t imgIdx;
@@ -859,13 +1351,26 @@ void PBRApp::drawFrame() {
     }
 
     updateUBOs();
+
+    // 先渲染 Shadow Map（独立提交并等待完成）
+    recordShadowCommandBuffer();
+    VkSubmitInfo shadowSubmitInfo{};
+    shadowSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    shadowSubmitInfo.commandBufferCount = 1;
+    shadowSubmitInfo.pCommandBuffers = &shadowCmdBuffer;
+    vkQueueSubmit(gfxQueue, 1, &shadowSubmitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(gfxQueue);
+
+    // 渲染主场景
     recordCommandBuffer(imgIdx);
 
     vkResetFences(device, 1, &fences[frameIdx]);
 
+    // semaphore 用 imgIdx 索引，避免 presentation 重用冲突
+    uint32_t semIdx = imgIdx % imageCount;
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     VkSemaphore wait[] = {semImgAvail[frameIdx]};
-    VkSemaphore sig[] = {semRendDone[frameIdx]};
+    VkSemaphore sig[] = {semRendDone[semIdx]};
 
     VkSubmitInfo si{};
     si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -880,13 +1385,12 @@ void PBRApp::drawFrame() {
     if (vkQueueSubmit(gfxQueue, 1, &si, fences[frameIdx]) != VK_SUCCESS)
         throw std::runtime_error("queue submit failed");
 
-    VkSwapchainKHR sw[] = {swapchain};
     VkPresentInfoKHR pi{};
     pi.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     pi.waitSemaphoreCount = 1;
     pi.pWaitSemaphores = sig;
     pi.swapchainCount = 1;
-    pi.pSwapchains = sw;
+    pi.pSwapchains = &swapchain;
     pi.pImageIndices = &imgIdx;
     r = vkQueuePresentKHR(presQueue, &pi);
 
@@ -918,9 +1422,11 @@ void PBRApp::recreateSwapchain() {
 // ============================================================================
 void PBRApp::cleanup() {
     vkDeviceWaitIdle(device);
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (uint32_t i = 0; i < imageCount; ++i) {
         vkDestroySemaphore(device, semImgAvail[i], nullptr);
         vkDestroySemaphore(device, semRendDone[i], nullptr);
+    }
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroyFence(device, fences[i], nullptr);
         vkDestroyBuffer(device, uboMVPBuf[i], nullptr);
         vkDestroyBuffer(device, uboMatBuf[i], nullptr);
@@ -934,6 +1440,10 @@ void PBRApp::cleanup() {
     vkDestroyBuffer(device, ibo, nullptr);
     vkFreeMemory(device, vboMem, nullptr);
     vkFreeMemory(device, iboMem, nullptr);
+    vkDestroyBuffer(device, planeVbo, nullptr);
+    vkDestroyBuffer(device, planeIbo, nullptr);
+    vkFreeMemory(device, planeVboMem, nullptr);
+    vkFreeMemory(device, planeIboMem, nullptr);
     vkDestroyCommandPool(device, cmdPool, nullptr);
     for (auto fb : framebuffers) vkDestroyFramebuffer(device, fb, nullptr);
     vkDestroyPipeline(device, pipeline, nullptr);
@@ -955,12 +1465,8 @@ void PBRApp::cleanup() {
 // run()
 // ============================================================================
 void PBRApp::run() {
-    std::cerr << "[DEBUG] run() - before initWindow\n" << std::flush;
     initWindow();
-    std::cerr << "[DEBUG] run() - before initVulkan\n" << std::flush;
     initVulkan();
-    std::cerr << "[DEBUG] run() - before mainLoop\n" << std::flush;
     mainLoop();
-    std::cerr << "[DEBUG] run() - before cleanup\n" << std::flush;
     cleanup();
 }

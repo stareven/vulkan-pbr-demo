@@ -3,6 +3,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <filesystem>
 #include <vector>
 
 #include "math_utils.h"
@@ -13,9 +14,11 @@
 // ============================================================================
 class PBRApp {
 public:
+    PBRApp(int argc, char* argv[]);
     void run();
 
 private:
+    std::filesystem::path exeDir;
     GLFWwindow* window = nullptr;
 
     // Vulkan 核心
@@ -50,16 +53,23 @@ private:
     // Command pool & buffers
     VkCommandPool cmdPool;
     std::vector<VkCommandBuffer> cmdBuffers;
+    VkCommandBuffer shadowCmdBuffer;  // Shadow pass 专用
 
     // Sync
     std::vector<VkSemaphore> semImgAvail, semRendDone;
     std::vector<VkFence> fences;
     uint32_t frameIdx = 0;
+    uint32_t imageCount = 0;  // swapchain 图像数量，用于 semaphore 索引
 
     // Mesh
     VkBuffer vbo, ibo;
     VkDeviceMemory vboMem, iboMem;
     uint32_t indexCount = 0;
+
+    // Ground plane mesh
+    VkBuffer planeVbo, planeIbo;
+    VkDeviceMemory planeVboMem, planeIboMem;
+    uint32_t planeIndexCount = 0;
 
     // Uniform buffers
     std::vector<VkBuffer> uboMVPBuf;
@@ -72,9 +82,31 @@ private:
     VkDescriptorPool descPool;
     std::vector<VkDescriptorSet> descSetsMVP, descSetsMat;
 
+    // Shadow map resources
+    static constexpr uint32_t SHADOW_MAP_SIZE = 2048;
+    VkImage shadowMapImage;
+    VkDeviceMemory shadowMapMemory;
+    VkImageView shadowMapImageView;
+    VkFramebuffer shadowMapFramebuffer;
+    VkRenderPass shadowMapRenderPass;
+    VkPipelineLayout shadowMapPipelineLayout;
+    VkPipeline shadowMapPipeline;
+    VkDescriptorSetLayout dslShadow;
+    std::vector<VkBuffer> uboShadowBuf;
+    std::vector<VkDeviceMemory> uboShadowMem;
+    std::vector<VkDescriptorSet> descSetsShadow;
+
+    // Light space matrices
+    Mat4 lightView, lightProj;
+
+    // Shadow sampler
+    VkSampler shadowSampler;
+    VkDescriptorSetLayout dslShadowSampler;
+    std::vector<VkDescriptorSet> descSetsShadowSampler;
+
     // Camera
-    Vec3 camPos{0, 0, 4};
-    float camYaw = M_PI, camPitch = 0;  // 初始看向 -Z 方向（球体在原点）
+    Vec3 camPos{0, 2, 5};
+    float camYaw = M_PI, camPitch = -0.5f;  // 稍微向下看，展示地面阴影
     bool leftDown = false;
     double lastMX = 0, lastMY = 0;
 
@@ -108,6 +140,18 @@ private:
     void createDescriptorSets();
     void createCommandBuffers();
     void createSyncObjects();
+
+    // Shadow map
+    void createShadowMap();
+    void createShadowRenderPass();
+    void createShadowPipeline();
+    void createShadowFramebuffer();
+    void createShadowDescriptorLayout();
+    void createShadowDescriptorSets();
+    void createShadowSampler();
+    void createShadowSamplerDescriptorLayout();
+    void createShadowSamplerDescriptorSets();
+    void recordShadowCommandBuffer();
 
     // ------------------------------------------------------------------
     // 运行时

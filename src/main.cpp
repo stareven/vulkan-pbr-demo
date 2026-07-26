@@ -2,8 +2,8 @@
 
 #include <iostream>
 
-int main() {
-    PBRApp app;
+int main(int argc, char* argv[]) {
+    PBRApp app(argc, argv);
     try {
         app.run();
     } catch (const std::exception& e) {

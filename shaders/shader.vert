@@ -1,14 +1,27 @@
 #version 450
 
-// 最小化测试：直接输出三角形，不使用任何 UBO
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec3 inNormal;
+layout(location = 2) in vec2 inUV;
+
+layout(location = 0) out vec3 fragPosition;
+layout(location = 1) out vec3 fragNormal;
+layout(location = 2) out vec2 fragUV;
+layout(location = 3) out vec4 fragPosLightSpace;
+
+layout(set = 0, binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+    mat4 lightSpaceMatrix;
+    vec3 cameraPos;
+} ubo;
 
 void main() {
-    // 硬编码三角形顶点
-    vec2 positions[3] = vec2[](
-        vec2(0.0, -0.5),
-        vec2(0.5, 0.5),
-        vec2(-0.5, 0.5)
-    );
-    
-    gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
+    vec4 worldPos = ubo.model * vec4(inPosition, 1.0);
+    fragPosition = worldPos.xyz;
+    fragNormal = mat3(transpose(inverse(ubo.model))) * inNormal;
+    fragUV = inUV;
+    fragPosLightSpace = ubo.lightSpaceMatrix * worldPos;
+    gl_Position = ubo.proj * ubo.view * worldPos;
 }

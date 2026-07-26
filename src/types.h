@@ -28,28 +28,43 @@ struct Vertex {
     Vec2 uv;
 };
 
-struct UBO_MVP {
-    Mat4 model, view, proj;
-    Vec3 cameraPos;
+struct alignas(16) UBO_MVP {
+    Mat4 model, view, proj;   // 3 * 64 = 192 bytes
+    Mat4 lightSpaceMatrix;    // offset 192, 64 bytes (光源 VP 矩阵，用于阴影)
+    Vec3 cameraPos;           // offset 256, 12 bytes
+    float _pad;               // offset 268, pad to 272
 };
 
 struct UBOLight {
-    Vec3 position;
-    Vec3 color;
-    float intensity;
+    Vec3 position;    // offset 0, 12 bytes + 4 pad = 16 (std140 vec3 stride)
+    float _pad0;
+    Vec3 color;       // offset 16, 12 bytes
+    float intensity;  // offset 28, 4 bytes
+    // struct total: 32 bytes (std140 rounds to 16-byte alignment)
 };
 
-struct UBO_Material {
-    Vec3 albedo;
-    float metallic;
-    float roughness;
-    float ao;
-    float ior;        // 折射率 (玻璃 ~1.5)
-    float opacity;    // 透明度 [0,1] (玻璃 < 1.0)
-    int   _pad0;
-    UBOLight lights[4];
-    Vec3 ambientLight;
-    Vec3 cameraPos;
-    Vec3 emissive;        // 自发光颜色
-    float emissiveStrength; // 自发光强度
+struct alignas(16) UBO_Material {
+    Vec3 albedo;          // offset 0
+    float metallic;       // offset 12
+    float roughness;      // offset 16
+    float ao;             // offset 20
+    float ior;            // offset 24
+    float opacity;        // offset 28
+    UBOLight lights[4];   // offset 32, each 32 bytes -> ends at 160
+    Vec3 ambientLight;    // offset 160
+    float _pad1;          // offset 172 (pad to align cameraPos to 16)
+    Vec3 cameraPos;       // offset 176
+    float _pad2;          // offset 188 (pad to align emissive to 16)
+    Vec3 emissive;        // offset 192
+    float emissiveStrength; // offset 204
+    // Total: 208 bytes (matches GLSL std140)
+};
+
+// ============================================================================
+// Shadow UBO - 光源空间矩阵
+// ============================================================================
+struct alignas(16) UBO_Shadow {
+    Mat4 lightSpaceMatrix;  // offset 0, 64 bytes (lightProj * lightView)
+    Vec3 lightPos;          // offset 64, 12 bytes
+    float _pad;             // offset 76, pad to 80
 };
