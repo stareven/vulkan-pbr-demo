@@ -58,10 +58,10 @@ void SyncManager::advanceFrame() {
 }
 
 void SyncManager::createSyncObjects(VkDevice device) {
-    // 为每个 swapchain 图像创建 semaphore（避免重用冲突）
-    imageAvailable.resize(imageCount);
-    renderFinished.resize(imageCount);
-    // fence 仍然按 maxFramesInFlight 创建（用于帧 pacing）
+    // 信号量按 maxFramesInFlight 分配（每次 acquire 用的是当前帧的信号量）
+    imageAvailable.resize(maxFramesInFlight);
+    renderFinished.resize(maxFramesInFlight);
+    // imagesInFlight 按 imageCount 分配（追踪每个 swapchain image 当前正在被哪个 fence 占用）
     inFlightFences.resize(maxFramesInFlight);
     imagesInFlight.resize(imageCount, VK_NULL_HANDLE);
 
@@ -71,7 +71,7 @@ void SyncManager::createSyncObjects(VkDevice device) {
     fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    for (uint32_t i = 0; i < imageCount; ++i) {
+    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
         if (vkCreateSemaphore(device, &sci, nullptr, &imageAvailable[i]) != VK_SUCCESS ||
             vkCreateSemaphore(device, &sci, nullptr, &renderFinished[i]) != VK_SUCCESS)
             throw std::runtime_error("sync object creation failed");

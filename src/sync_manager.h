@@ -10,9 +10,11 @@
 // ============================================================================
 class SyncManager {
 private:
+    // 按 maxFramesInFlight 分配：每帧在飞有自己的信号量 + fence
     std::vector<VkSemaphore> imageAvailable;
     std::vector<VkSemaphore> renderFinished;
     std::vector<VkFence> inFlightFences;
+    // 按 imageCount 分配：追踪每个 swapchain image 当前正在被哪个 fence 占用
     std::vector<VkFence> imagesInFlight;
     uint32_t currentFrame = 0;
     uint32_t maxFramesInFlight;
