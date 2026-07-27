@@ -78,12 +78,9 @@ vulkan_pbr_demo/
 │   ├── shader.frag       # PBR fragment shader
 │   └── shadow.vert       # Shadow pass vertex shader
 └── src/
-    ├── main.cpp
-    ├── pbr_app.h         # PBRApp — thin orchestrator over the managers
-    ├── pbr_init.cpp      # Window creation + Vulkan init (calls each manager)
-    ├── pbr_runtime.cpp   # Main loop, input, per-frame draw orchestration
-    ├── pbr_cleanup.cpp   # Reverse-order manager cleanup + run()
-    ├── window.*          # GLFW window creation, surface, resize flag
+    ├── main.cpp              # 程序入口
+    ├── pbr_app.h/cpp         # PBRApp — 薄的编排层（init / main loop / draw / cleanup）
+    ├── window.*              # GLFW 窗口 + surface + resize 标志
     ├── vulkan_context.*  # Instance / physical device / logical device / queues
     ├── sync_manager.*    # Semaphores + fences
     ├── swapchain_manager.*  # Swapchain, image views, depth buffer

@@ -7,10 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # 源文件
 set(SOURCES
     src/main.cpp
-    src/pbr_app.h
-    src/pbr_init.cpp
-    src/pbr_runtime.cpp
-    src/pbr_cleanup.cpp
+    src/pbr_app.cpp
     src/material_system.cpp
     src/window.cpp
     src/vulkan_context.cpp
