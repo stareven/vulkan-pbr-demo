@@ -44,9 +44,7 @@ void PBRApp::initWindow() {
         auto s = reinterpret_cast<PBRApp*>(glfwGetWindowUserPointer(w));
         if (s->leftDown) {
             double dx = x - s->lastMX, dy = y - s->lastMY;
-            s->camYaw   += dx * 0.005f;
-            s->camPitch -= dy * 0.005f;
-            s->camPitch = std::clamp(s->camPitch, -1.5f, 1.5f);
+            s->camera.handleMouseDrag(dx, dy);
         }
         s->lastMX = x;
         s->lastMY = y;
@@ -137,19 +135,14 @@ void PBRApp::initVulkan() {
 // ============================================================================
 void PBRApp::handleInput(float dt) {
     float speed = 5.0f * dt;
-    float cx = std::cos(camPitch) * std::sin(camYaw);
-    float cy = std::sin(camPitch);
-    float cz = std::cos(camPitch) * std::cos(camYaw);
-    Vec3 fwd{cx, cy, cz};
-    Vec3 right = fwd.cross({0, 1, 0}).normalize();
 
     GLFWwindow* h = window.getHandle();
-    if (glfwGetKey(h, GLFW_KEY_W) == GLFW_PRESS) camPos = camPos + fwd * speed;
-    if (glfwGetKey(h, GLFW_KEY_S) == GLFW_PRESS) camPos = camPos - fwd * speed;
-    if (glfwGetKey(h, GLFW_KEY_A) == GLFW_PRESS) camPos = camPos - right * speed;
-    if (glfwGetKey(h, GLFW_KEY_D) == GLFW_PRESS) camPos = camPos + right * speed;
-    if (glfwGetKey(h, GLFW_KEY_Q) == GLFW_PRESS) camPos.y -= speed;
-    if (glfwGetKey(h, GLFW_KEY_E) == GLFW_PRESS) camPos.y += speed;
+    if (glfwGetKey(h, GLFW_KEY_W) == GLFW_PRESS) camera.moveForward(speed);
+    if (glfwGetKey(h, GLFW_KEY_S) == GLFW_PRESS) camera.moveForward(-speed);
+    if (glfwGetKey(h, GLFW_KEY_A) == GLFW_PRESS) camera.moveRight(-speed);
+    if (glfwGetKey(h, GLFW_KEY_D) == GLFW_PRESS) camera.moveRight(speed);
+    if (glfwGetKey(h, GLFW_KEY_Q) == GLFW_PRESS) camera.moveUp(-speed);
+    if (glfwGetKey(h, GLFW_KEY_E) == GLFW_PRESS) camera.moveUp(speed);
 
     // 材质切换 (M)
     static bool mLast = false;
@@ -212,12 +205,7 @@ void PBRApp::drawFrame() {
     uint32_t frameIdx = syncManager.getCurrentFrame();
 
     // 计算相机 / 投影矩阵
-    float cx = std::cos(camPitch) * std::sin(camYaw);
-    float cy = std::sin(camPitch);
-    float cz = std::cos(camPitch) * std::cos(camYaw);
-    Vec3 camDir{cx, cy, cz};
-    Vec3 target = camPos + camDir;
-    Mat4 view = Mat4::lookAt(camPos, target, {0, 1, 0});
+    Mat4 view = camera.getViewMatrix();
     float aspect = (float)swapchain.getExtent().width / (float)swapchain.getExtent().height;
     Mat4 proj = Mat4::perspective(45.0f * static_cast<float>(M_PI) / 180.0f, aspect, 0.1f, 100.0f);
     Mat4 model = Mat4::identity();
@@ -231,7 +219,7 @@ void PBRApp::drawFrame() {
 
     // 更新主 pass UBOs
     meshManager.updateUniformBuffers(ctx.device, frameIdx,
-        model, view, proj, lightSpaceMatrix, camPos,
+        model, view, proj, lightSpaceMatrix, camera.getPosition(),
         materialSystem.getPreset(),
         materialSystem.isGlassEnabled(),
         materialSystem.isEmissiveEnabled());

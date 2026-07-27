@@ -5,6 +5,7 @@
 
 #include "math_utils.h"
 #include "types.h"
+#include "camera.h"
 
 #include "window.h"
 #include "vulkan_context.h"
@@ -21,7 +22,7 @@
 // PBR 主应用
 //
 // PBRApp 只负责编排（init / main loop / per-frame orchestration / cleanup），
-// 具体的 Vulkan 资源由各个 Manager 类管理。
+// 具体的 Vulkan 资源由各个 Manager 类管理；相机状态由 Camera 类管理。
 // ============================================================================
 class PBRApp {
 public:
@@ -44,10 +45,8 @@ private:
     ShadowSystem shadowSystem;
     MaterialSystem materialSystem;
 
-    // 相机状态（窗口层只负责鼠标/resize，相机移动逻辑在 PBRApp）
-    Vec3 camPos{0, 2, 5};
-    float camYaw = static_cast<float>(M_PI);
-    float camPitch = -0.5f;
+    // 相机 + 鼠标状态（相机逻辑在 Camera 类；鼠标状态是输入层的细节）
+    Camera camera;
     bool leftDown = false;
     double lastMX = 0, lastMY = 0;
 
