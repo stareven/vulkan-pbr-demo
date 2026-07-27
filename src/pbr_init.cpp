@@ -1,17 +1,11 @@
 #include "pbr_app.h"
 #include "vulkan_utils.h"
-#include "mesh.h"
 
 #include <algorithm>
-#include <array>
-#include <chrono>
 #include <cmath>
-#include <cstring>
 #include <filesystem>
 #include <iostream>
-#include <set>
 #include <stdexcept>
-#include <thread>
 
 PBRApp::PBRApp(int argc, char* argv[]) {
     try {
@@ -19,189 +13,108 @@ PBRApp::PBRApp(int argc, char* argv[]) {
     } catch (...) {
         exeDir = std::filesystem::current_path();
     }
+    shaderDir = exeDir.parent_path().string();
 }
 
 // ============================================================================
 // Window
 // ============================================================================
 void PBRApp::initWindow() {
-    glfwInit();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-    window = glfwCreateWindow(WIDTH, HEIGHT, TITLE, nullptr, nullptr);
+    window.create();
 
-    if (!window) {
-        throw std::runtime_error("Failed to create GLFW window");
-    }
+    // 重新注册回调，使用 PBRApp 自己的相机状态（覆盖 Window 内部的默认回调）
+    GLFWwindow* h = window.getHandle();
+    glfwSetWindowUserPointer(h, this);
 
-    glfwShowWindow(window);
-    glfwFocusWindow(window);
-    glfwPollEvents();
-
-#ifdef __APPLE__
-    // macOS: 确保窗口在前台显示
-    glfwSetWindowAttrib(window, GLFW_FLOATING, GLFW_FALSE);
-#endif
-
-    glfwSetWindowUserPointer(window, this);
-    glfwSetFramebufferSizeCallback(window, [](GLFWwindow* w, int, int) {
-        reinterpret_cast<PBRApp*>(glfwGetWindowUserPointer(w))->fbResized = true;
-    });
-    glfwSetCursorPosCallback(window, [](GLFWwindow* w, double x, double y) {
+    glfwSetCursorPosCallback(h, [](GLFWwindow* w, double x, double y) {
         auto s = reinterpret_cast<PBRApp*>(glfwGetWindowUserPointer(w));
         if (s->leftDown) {
             double dx = x - s->lastMX, dy = y - s->lastMY;
-            s->camYaw += dx * 0.005f;
+            s->camYaw   += dx * 0.005f;
             s->camPitch -= dy * 0.005f;
             s->camPitch = std::clamp(s->camPitch, -1.5f, 1.5f);
         }
         s->lastMX = x;
         s->lastMY = y;
     });
-    glfwSetMouseButtonCallback(window, [](GLFWwindow* w, int btn, int act, int) {
+
+    glfwSetMouseButtonCallback(h, [](GLFWwindow* w, int btn, int act, int) {
         auto s = reinterpret_cast<PBRApp*>(glfwGetWindowUserPointer(w));
         if (btn == GLFW_MOUSE_BUTTON_LEFT) {
             s->leftDown = (act == GLFW_PRESS);
             glfwGetCursorPos(w, &s->lastMX, &s->lastMY);
         }
     });
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    // framebuffer resize 直接用 Window 内部的状态即可（通过 window.isFramebufferResized()）
 }
 
 // ============================================================================
-// Vulkan Init
+// Vulkan Init — 编排各 Manager 的初始化顺序
 // ============================================================================
 void PBRApp::initVulkan() {
-    if (ENABLE_VALIDATION && !checkLayerSupport(VALIDATION_LAYERS))
-        throw std::runtime_error("validation layer unavailable");
+    // 1. 核心 Vulkan 上下文
+    ctx.initialize(window.getHandle());
 
-    // Instance
-    VkApplicationInfo ai{};
-    ai.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    ai.pApplicationName = "PBR Demo";
-    ai.apiVersion = VK_API_VERSION_1_1;
+    // 2. Swapchain（包含 image views + depth buffer）
+    swapchain.create(ctx.device, ctx.physicalDevice, ctx.surface, window.getHandle());
 
-    uint32_t extCount = 0;
-    const char** glfwExts = glfwGetRequiredInstanceExtensions(&extCount);
-    std::vector<const char*> exts(glfwExts, glfwExts + extCount);
-    exts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    // 3. 命令池（mesh upload 需要它）
+    cmdManager.createPool(ctx.device, ctx.graphicsFamily);
 
-    VkInstanceCreateInfo ici{};
-    ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    ici.pApplicationInfo = &ai;
-    ici.enabledExtensionCount = (uint32_t)exts.size();
-    ici.ppEnabledExtensionNames = exts.data();
-    ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-    if (ENABLE_VALIDATION) {
-        ici.enabledLayerCount = (uint32_t)VALIDATION_LAYERS.size();
-        ici.ppEnabledLayerNames = VALIDATION_LAYERS.data();
-    }
-    if (vkCreateInstance(&ici, nullptr, &instance) != VK_SUCCESS)
-        throw std::runtime_error("instance creation failed");
+    // 4. Mesh（顶点/索引缓冲）
+    meshManager.createMeshes(ctx.device, ctx.physicalDevice,
+                             ctx.graphicsQueue, cmdManager.getPool());
 
-    // Physical device
-    {
-        uint32_t n = 0;
-        vkEnumeratePhysicalDevices(instance, &n, nullptr);
-        if (n == 0) throw std::runtime_error("no suitable GPU");
-        std::vector<VkPhysicalDevice> devs(n);
-        vkEnumeratePhysicalDevices(instance, &n, devs.data());
-        for (auto d : devs) {
-            VkPhysicalDeviceProperties dp;
-            vkGetPhysicalDeviceProperties(d, &dp);
-            std::cout << "Found device: " << dp.deviceName << "\n" << std::flush;
+    // 5. 主 pass 的 Uniform 缓冲（MVP + Material）
+    meshManager.createUniformBuffers(ctx.device, ctx.physicalDevice, MAX_FRAMES_IN_FLIGHT);
 
-            uint32_t eN = 0;
-            vkEnumerateDeviceExtensionProperties(d, nullptr, &eN, nullptr);
-            std::vector<VkExtensionProperties> eP(eN);
-            vkEnumerateDeviceExtensionProperties(d, nullptr, &eN, eP.data());
+    // 6. Descriptor 布局（MVP + Material）
+    descManager.createLayouts(ctx.device);
 
-            std::set<std::string> req(DEVICE_EXTENSIONS.begin(), DEVICE_EXTENSIONS.end());
-            for (auto& e : eP) req.erase(e.extensionName);
-            if (!req.empty()) continue;
-            pd = d;
-            break;
-        }
-        if (!pd) throw std::runtime_error("no suitable GPU");
-    }
+    // 7. 阴影系统（shadow map + render pass + sampler + descriptor layout）
+    //    注意：initialize() 内部会创建 shadow pipeline，但 shadow pipeline 需要
+    //    render pipeline 的 descriptor set layout 在之前创建——所以这里先做 shadow 的
+    //    资源准备，pipeline 稍后通过 createShadowPipeline() 单独创建。
+    shadowSystem.createShadowMap(ctx.device, ctx.physicalDevice);
+    shadowSystem.createShadowRenderPass(ctx.device);
+    shadowSystem.createShadowDescriptorLayout(ctx.device);
+    shadowSystem.createShadowSampler(ctx.device);
+    shadowSystem.createShadowSamplerDescriptorLayout(ctx.device);
 
-    // Surface
-    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
-        throw std::runtime_error("surface creation failed");
+    // 8. 主渲染通道 + 管线布局 + 图形管线 + 帧缓冲
+    renderPipeline.createRenderPass(ctx.device, swapchain.getFormat());
+    renderPipeline.createPipelineLayout(ctx.device,
+        descManager.getMVPLayout(),
+        descManager.getMaterialLayout(),
+        shadowSystem.getSamplerLayout());   // set 2 = shadow sampler
+    renderPipeline.createGraphicsPipeline(ctx.device, swapchain.getExtent(), shaderDir);
+    renderPipeline.createFramebuffers(ctx.device, swapchain.getExtent(),
+        swapchain.getImageViews(), swapchain.getDepthImageView());
 
-    // Logical device
-    {
-        uint32_t qfCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(pd, &qfCount, nullptr);
-        std::vector<VkQueueFamilyProperties> qfProps(qfCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(pd, &qfCount, qfProps.data());
+    // 9. Shadow pipeline / framebuffer（依赖前面的 shadow render pass + descriptor layout）
+    shadowSystem.createShadowPipeline(ctx.device, shaderDir);
+    shadowSystem.createShadowFramebuffer(ctx.device);
 
-        uint32_t gfxFamily = UINT32_MAX;
-        uint32_t presentFamily = UINT32_MAX;
-        for (uint32_t i = 0; i < qfCount; i++) {
-            if (qfProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) gfxFamily = i;
-            VkBool32 presentSupport = VK_FALSE;
-            vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, surface, &presentSupport);
-            if (presentSupport) presentFamily = i;
-        }
-        if (gfxFamily == UINT32_MAX) throw std::runtime_error("no graphics queue family");
-        if (presentFamily == UINT32_MAX) presentFamily = gfxFamily;
+    // 10. Sync objects
+    syncManager.create(ctx.device, swapchain.getImageCount());
 
-        std::set<uint32_t> uq{gfxFamily, presentFamily};
-        std::vector<VkDeviceQueueCreateInfo> qci;
-        float pri = 1.0f;
-        for (uint32_t i : uq) {
-            VkDeviceQueueCreateInfo c{};
-            c.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-            c.queueFamilyIndex = i;
-            c.queueCount = 1;
-            c.pQueuePriorities = &pri;
-            qci.push_back(c);
-        }
-        VkPhysicalDeviceFeatures feat{};
-        VkDeviceCreateInfo dci{};
-        dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        dci.queueCreateInfoCount = (uint32_t)qci.size();
-        dci.pQueueCreateInfos = qci.data();
-        dci.pEnabledFeatures = &feat;
-        dci.enabledExtensionCount = (uint32_t)DEVICE_EXTENSIONS.size();
-        dci.ppEnabledExtensionNames = DEVICE_EXTENSIONS.data();
+    // 11. Descriptor pool + 主 pass 的 descriptor sets
+    descManager.createPool(ctx.device, MAX_FRAMES_IN_FLIGHT);
+    descManager.allocateSets(ctx.device, MAX_FRAMES_IN_FLIGHT);
 
-        if (vkCreateDevice(pd, &dci, nullptr, &device) != VK_SUCCESS)
-            throw std::runtime_error("logical device creation failed");
-
-        vkGetDeviceQueue(device, gfxFamily, 0, &gfxQueue);
-        vkGetDeviceQueue(device, presentFamily, 0, &presQueue);
+    // 绑定每帧的 descriptor set 到对应的 UBO（一次性完成，之后每帧只写 UBO 内存）
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        descManager.updateSets(ctx.device, i,
+            meshManager.getMVPBuffer(i),
+            meshManager.getMaterialBuffer(i));
     }
 
-    createSwapchain();
-    createImageViews();
-    createDepthBuffer();
-    createRenderPass();
-    createDescriptorLayouts();
+    // 12. Shadow descriptor sets + sampler descriptor sets
+    shadowSystem.createShadowDescriptorSets(ctx.device, ctx.physicalDevice, MAX_FRAMES_IN_FLIGHT);
+    shadowSystem.createShadowSamplerDescriptorSets(ctx.device, swapchain.getImageCount(),
+        shadowSystem.getShadowMapView());
 
-    // Shadow map resources (需要 descriptor layout 在 graphics pipeline 之前)
-    createShadowMap();
-    createShadowRenderPass();
-    createShadowDescriptorLayout();
-    createShadowSampler();
-    createShadowSamplerDescriptorLayout();
-
-    createGraphicsPipeline();
-    createShadowPipeline();
-    createShadowFramebuffer();
-    createFramebuffers();
-    createCommandPool();
-    createMesh();
-
-    createUniformBuffers();
-
-    // 需要先创建 sync objects 来获取 imageCount
-    createSyncObjects();
-
-    createDescriptorPool();
-    createDescriptorSets();
-    createShadowDescriptorSets();
-    createShadowSamplerDescriptorSets();
-    createCommandBuffers();
+    // 13. 命令缓冲
+    cmdManager.allocateBuffers(ctx.device, MAX_FRAMES_IN_FLIGHT);
+    cmdManager.allocateShadowCommandBuffer(ctx.device);
 }

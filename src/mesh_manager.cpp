@@ -37,13 +37,13 @@ void MeshManager::createUniformBuffers(VkDevice device, VkPhysicalDevice physica
 void MeshManager::updateUniformBuffers(VkDevice device, uint32_t imageIndex, const Mat4& model, const Mat4& view, const Mat4& proj,
                                        const Mat4& lightSpaceMatrix, const Vec3& cameraPos,
                                        int materialPreset, bool glassEnabled, bool emissiveEnabled) {
-    // Update MVP UBO
+    // Update MVP UBO (C++ 是 row-major，GLSL 是 column-major，需要转置)
     {
         UBO_MVP ubo{};
-        ubo.model = model;
-        ubo.view = view;
-        ubo.proj = proj;
-        ubo.lightSpaceMatrix = lightSpaceMatrix;
+        ubo.model = model.transposed();
+        ubo.view = view.transposed();
+        ubo.proj = proj.transposed();
+        ubo.lightSpaceMatrix = lightSpaceMatrix.transposed();
         ubo.cameraPos = cameraPos;
 
         void* data;
@@ -54,24 +54,21 @@ void MeshManager::updateUniformBuffers(VkDevice device, uint32_t imageIndex, con
 
     // Update Material UBO
     {
-        // Material presets
+        // Material presets（对齐 pbr_runtime.cpp 的预设值）
         struct MaterialPreset {
             Vec3 albedo;
             float metallic;
             float roughness;
-            float ao;
-            float ior;
-            float opacity;
         };
 
         MaterialPreset presets[] = {
-            {{0.8f, 0.2f, 0.2f}, 0.0f, 0.8f, 1.0f, 1.5f, 1.0f},  // Red plastic
-            {{0.9f, 0.9f, 0.9f}, 1.0f, 0.1f, 1.0f, 1.5f, 1.0f},  // Silver mirror
-            {{0.1f, 0.2f, 0.8f}, 0.0f, 0.3f, 1.0f, 1.5f, 1.0f},  // Blue rubber
-            {{0.9f, 0.7f, 0.2f}, 1.0f, 0.3f, 1.0f, 1.5f, 1.0f},  // Gold
-            {{0.5f, 0.5f, 0.5f}, 0.0f, 0.5f, 1.0f, 1.5f, 1.0f},  // Gray
-            {{0.2f, 0.8f, 0.3f}, 0.0f, 0.6f, 1.0f, 1.5f, 1.0f},  // Green
-            {{0.9f, 0.9f, 0.95f}, 0.0f, 0.0f, 1.0f, 1.5f, 1.0f}, // Glass
+            {{0.95f, 0.35f, 0.10f}, 0.0f, 0.7f},   // 红色塑料
+            {{0.95f, 0.93f, 0.88f}, 1.0f, 0.1f},   // 银
+            {{1.00f, 0.77f, 0.33f}, 1.0f, 0.3f},   // 金
+            {{0.97f, 0.96f, 0.91f}, 1.0f, 0.2f},   // 铝
+            {{0.30f, 0.85f, 0.39f}, 0.0f, 0.4f},   // 绿色塑料
+            {{0.50f, 0.50f, 0.50f}, 1.0f, 0.5f},   // 铁
+            {{0.98f, 0.99f, 1.00f}, 0.0f, 0.05f},  // 玻璃
         };
 
         auto& pr = presets[materialPreset % 7];
@@ -80,41 +77,29 @@ void MeshManager::updateUniformBuffers(VkDevice device, uint32_t imageIndex, con
         ubo.albedo = pr.albedo;
         ubo.metallic = pr.metallic;
         ubo.roughness = pr.roughness;
-        ubo.ao = pr.ao;
-        ubo.ior = pr.ior;
-        ubo.opacity = pr.opacity;
+        ubo.ao = 1.0f;
+        ubo.ior = 1.5f;
+        ubo.opacity = 1.0f;
         ubo.cameraPos = cameraPos;
+        ubo.ambientLight = {0.03f, 0.03f, 0.03f};
 
         if ((materialPreset % 7) == 6 && glassEnabled) {
+            ubo.ior = 1.52f;
             ubo.opacity = 0.3f;
-            ubo.ior = 1.5f;
         }
 
-        ubo.ambientLight = {0.1f, 0.1f, 0.1f};
-
-        // Lights
-        ubo.lights[0].position = {3, 3, 3};
-        ubo.lights[0].color = {1, 1, 1};
-        ubo.lights[0].intensity = 20;
-
-        ubo.lights[1].position = {-3, 2, -3};
-        ubo.lights[1].color = {0.8f, 0.8f, 1.0f};
-        ubo.lights[1].intensity = 15;
-
-        ubo.lights[2].position = {0, 5, 0};
-        ubo.lights[2].color = {1, 0.9f, 0.8f};
-        ubo.lights[2].intensity = 10;
-
-        ubo.lights[3].position = {5, 1, -2};
-        ubo.lights[3].color = {1, 0.5f, 0.5f};
-        ubo.lights[3].intensity = 8;
+        // Lights (对齐 pbr_runtime.cpp 的光源配置)
+        ubo.lights[0] = {{10, 10, 10}, 0.0f, {300, 300, 300}, 1.0f};
+        ubo.lights[1] = {{-10, 10, 10}, 0.0f, {300, 100, 100}, 1.0f};
+        ubo.lights[2] = {{10, -10, -10}, 0.0f, {100, 300, 100}, 1.0f};
+        ubo.lights[3] = {{-10, -10, -10}, 0.0f, {100, 100, 300}, 1.0f};
 
         if (emissiveEnabled) {
-            ubo.emissive = {1, 1, 1};
+            ubo.emissive = {1.0f, 0.5f, 0.1f};
             ubo.emissiveStrength = 2.0f;
         } else {
-            ubo.emissive = {0, 0, 0};
-            ubo.emissiveStrength = 0;
+            ubo.emissive = {0.0f, 0.0f, 0.0f};
+            ubo.emissiveStrength = 0.0f;
         }
 
         void* data;
@@ -204,7 +189,7 @@ void MeshManager::createSphereMesh(VkDevice device, VkPhysicalDevice physicalDev
 
 void MeshManager::createPlaneMesh(VkDevice device, VkPhysicalDevice physicalDevice,
                                   VkQueue graphicsQueue, VkCommandPool cmdPool) {
-    auto vertices = generatePlane(10, 0);
+    auto vertices = generatePlane(10.0f, -1.5f);
     auto indices = generatePlaneIndices();
     planeIndexCount = (uint32_t)indices.size();
 

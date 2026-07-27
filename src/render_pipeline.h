@@ -22,9 +22,8 @@ public:
     void createRenderPass(VkDevice device, VkFormat swapchainFormat);
     void createPipelineLayout(VkDevice device, VkDescriptorSetLayout mvpLayout,
                              VkDescriptorSetLayout materialLayout,
-                             VkDescriptorSetLayout shadowLayout,
                              VkDescriptorSetLayout shadowSamplerLayout);
-    void createGraphicsPipeline(VkDevice device, VkExtent2D extent);
+    void createGraphicsPipeline(VkDevice device, VkExtent2D extent, const std::string& shaderDir);
     void createFramebuffers(VkDevice device, VkExtent2D extent,
                            const std::vector<VkImageView>& swapchainViews,
                            VkImageView depthView);

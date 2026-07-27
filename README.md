@@ -61,9 +61,11 @@ glslangValidator -V shaders/shadow.vert    -o shaders/shadow.vert.spv
 | Key | Action |
 | --- | ------ |
 | `W` / `A` / `S` / `D` | Move camera |
+| `Q` / `E` | Move camera down / up |
 | Mouse drag | Orbit camera |
-| Scroll wheel | Zoom |
 | `M` | Cycle material preset |
+| `G` | Toggle glass / transparency mode (applies when preset 6 is selected) |
+| `F` | Toggle emissive lighting |
 | `Esc` | Quit |
 
 ## Project layout
@@ -77,32 +79,44 @@ vulkan_pbr_demo/
 │   └── shadow.vert       # Shadow pass vertex shader
 └── src/
     ├── main.cpp
-    ├── pbr_app.h         # PBRApp — coordinates the managers
-    ├── pbr_init.cpp      # Window + Vulkan instance + device creation
-    ├── pbr_swapchain.cpp # Swapchain lifecycle
-    ├── pbr_render.cpp    # Render pass / pipeline / framebuffer setup
-    ├── pbr_mesh_buffers.cpp
-    ├── pbr_descriptors.cpp
-    ├── pbr_commands.cpp
-    ├── pbr_sync.cpp
-    ├── pbr_shadow.cpp    # Shadow map pass
-    ├── pbr_runtime.cpp   # Main loop, UBO updates, drawing
-    ├── pbr_cleanup.cpp
-    ├── material_system.* # PBR material presets
-    ├── window.*          # GLFW window + camera controls
-    ├── vulkan_context.*  # Instance / device / queues
+    ├── pbr_app.h         # PBRApp — thin orchestrator over the managers
+    ├── pbr_init.cpp      # Window creation + Vulkan init (calls each manager)
+    ├── pbr_runtime.cpp   # Main loop, input, per-frame draw orchestration
+    ├── pbr_cleanup.cpp   # Reverse-order manager cleanup + run()
+    ├── window.*          # GLFW window creation, surface, resize flag
+    ├── vulkan_context.*  # Instance / physical device / logical device / queues
     ├── sync_manager.*    # Semaphores + fences
-    ├── swapchain_manager.*
-    ├── render_pipeline.*
-    ├── mesh_manager.*
-    ├── descriptor_manager.*
-    ├── command_manager.*
-    ├── shadow_system.*
-    ├── mesh.*
-    ├── types.h           # Vertex, UBOs, Vulkan constants
-    ├── math_utils.h      # Vec2/Vec3/Mat4 helpers
-    └── vulkan_utils.h    # Buffer + shader loading helpers
+    ├── swapchain_manager.*  # Swapchain, image views, depth buffer
+    ├── render_pipeline.*    # Main render pass, pipeline layout, graphics pipeline, framebuffers
+    ├── mesh_manager.*       # Vertex/index buffers + MVP/Material UBOs
+    ├── descriptor_manager.* # Descriptor layouts / pool / sets (MVP + Material)
+    ├── command_manager.*    # Command pool + per-frame and shadow command buffers
+    ├── shadow_system.*      # Shadow map, shadow render pass, shadow pipeline, shadow UBO
+    ├── material_system.*    # Material preset state (no Vulkan resources)
+    ├── mesh.*               # Sphere/plane vertex generation utilities
+    ├── types.h              # Vertex, UBOs, Vulkan constants
+    ├── math_utils.h         # Vec2/Vec3/Mat4 helpers
+    └── vulkan_utils.h       # Buffer creation, shader loading, queue finding
 ```
+
+### Architecture
+
+The codebase follows a **composition-based** design:
+
+- **`PBRApp`** is a thin orchestrator. It owns instances of every manager and is responsible only for initialization order, input, per-frame sequencing, and cleanup order.
+- **Each manager** owns a distinct slice of Vulkan state:
+  - `VulkanContext` — instance, device, surface, queues
+  - `SwapchainManager` — swapchain + image views + depth buffer
+  - `RenderPipeline` — main render pass, pipeline layout, graphics pipeline, framebuffers
+  - `MeshManager` — vertex/index buffers and per-frame MVP/Material UBOs
+  - `DescriptorManager` — main descriptor layouts / pool / sets
+  - `CommandManager` — command pool + per-frame command buffers + shadow command buffer
+  - `SyncManager` — semaphores + fences (per-image + per-frame)
+  - `ShadowSystem` — shadow map + shadow render pass + shadow pipeline + shadow UBOs + shadow sampler
+  - `MaterialSystem` — material preset state (pure logic, no Vulkan resources)
+  - `Window` — GLFW window + surface + resize flag
+
+This split keeps each manager's lifetime, cleanup order, and public API easy to reason about.
 
 ## Rendering pipeline
 

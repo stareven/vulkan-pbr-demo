@@ -7,14 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # 源文件
 set(SOURCES
     src/main.cpp
+    src/pbr_app.h
     src/pbr_init.cpp
-    src/pbr_swapchain.cpp
-    src/pbr_render.cpp
-    src/pbr_mesh_buffers.cpp
-    src/pbr_descriptors.cpp
-    src/pbr_commands.cpp
-    src/pbr_sync.cpp
-    src/pbr_shadow.cpp
     src/pbr_runtime.cpp
     src/pbr_cleanup.cpp
     src/material_system.cpp

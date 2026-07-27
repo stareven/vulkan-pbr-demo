@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <cstring>
+#include <string>
 
 ShadowSystem::~ShadowSystem() {
     // Cleanup should be called explicitly
@@ -15,7 +16,7 @@ void ShadowSystem::initialize(VkDevice device, VkPhysicalDevice physicalDevice) 
     createShadowDescriptorLayout(device);
     createShadowSampler(device);
     createShadowSamplerDescriptorLayout(device);
-    createShadowPipeline(device, dslShadowSampler);
+    // 注意：createShadowPipeline 需要 shaderDir，由调用方单独调用
     createShadowFramebuffer(device);
 }
 
@@ -27,8 +28,8 @@ void ShadowSystem::createShadowRenderPass(VkDevice device) {
     createShadowRenderPassInternal(device);
 }
 
-void ShadowSystem::createShadowPipeline(VkDevice device, VkDescriptorSetLayout shadowSamplerLayout) {
-    createShadowPipelineInternal(device, shadowSamplerLayout);
+void ShadowSystem::createShadowPipeline(VkDevice device, const std::string& shaderDir) {
+    createShadowPipelineInternal(device, shaderDir);
 }
 
 void ShadowSystem::createShadowFramebuffer(VkDevice device) {
@@ -39,7 +40,7 @@ void ShadowSystem::createShadowDescriptorLayout(VkDevice device) {
     createShadowDescriptorLayoutInternal(device);
 }
 
-void ShadowSystem::createShadowDescriptorSets(VkDevice device, uint32_t imageCount) {
+void ShadowSystem::createShadowDescriptorSets(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t imageCount) {
     // Similar to descriptor manager but for shadow
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -67,14 +68,29 @@ void ShadowSystem::createShadowDescriptorSets(VkDevice device, uint32_t imageCou
     if (vkAllocateDescriptorSets(device, &ai, descSetsShadow.data()) != VK_SUCCESS)
         throw std::runtime_error("shadow descriptor set allocation failed");
 
-    // Create UBOs
+    // Create UBOs and update descriptor sets
     uboShadowBuf.resize(imageCount);
     uboShadowMem.resize(imageCount);
     for (uint32_t i = 0; i < imageCount; ++i) {
-        createBuffer(device, VK_NULL_HANDLE, sizeof(UBO_Shadow),
+        createBuffer(device, physicalDevice, sizeof(UBO_Shadow),
                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                     uboShadowBuf[i], uboShadowMem[i]);
+
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = uboShadowBuf[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UBO_Shadow);
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = descSetsShadow[i];
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        write.pBufferInfo = &bufferInfo;
+
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
     }
 }
 
@@ -133,24 +149,24 @@ void ShadowSystem::createShadowSamplerDescriptorSets(VkDevice device, uint32_t i
     }
 }
 
-void ShadowSystem::updateShadowUBO(uint32_t imageIndex, const Mat4& model) {
-    // Calculate light matrices
-    Vec3 lightPos{5, 10, 5};
+void ShadowSystem::updateShadowUBO(VkDevice device, uint32_t imageIndex, const Mat4& model) {
+    // 光源位置与 pbr_runtime.cpp 保持一致
+    Vec3 lightPos{10, 10, 10};
     Vec3 lightTarget{0, 0, 0};
     Vec3 lightUp{0, 1, 0};
 
     lightView = Mat4::lookAt(lightPos, lightTarget, lightUp);
-    lightProj = Mat4::perspective(45.0f, 1.0f, 0.1f, 50.0f);
-    // perspective 已经处理了 Y 翻转
+    // 使用正交投影（定向光风格），与 pbr_runtime.cpp 一致
+    lightProj = Mat4::ortho(-8, 8, -8, 8, 0.1f, 50.0f);
 
     UBO_Shadow ubo{};
-    ubo.lightSpaceMatrix = lightProj * lightView;
+    ubo.lightSpaceMatrix = (lightProj * lightView).transposed();  // 转置给 GLSL
     ubo.lightPos = lightPos;
 
     void* data;
-    vkMapMemory(VK_NULL_HANDLE, uboShadowMem[imageIndex], 0, sizeof(ubo), 0, &data);
+    vkMapMemory(device, uboShadowMem[imageIndex], 0, sizeof(ubo), 0, &data);
     memcpy(data, &ubo, sizeof(ubo));
-    vkUnmapMemory(VK_NULL_HANDLE, uboShadowMem[imageIndex]);
+    vkUnmapMemory(device, uboShadowMem[imageIndex]);
 }
 
 void ShadowSystem::cleanup(VkDevice device) {
@@ -261,15 +277,11 @@ void ShadowSystem::createShadowRenderPassInternal(VkDevice device) {
         throw std::runtime_error("shadow render pass creation failed");
 }
 
-void ShadowSystem::createShadowPipelineInternal(VkDevice device, VkDescriptorSetLayout shadowSamplerLayout) {
-    std::filesystem::path exeDir = std::filesystem::current_path();
-    std::string vsPath = exeDir.parent_path().string() + "/shaders/shadow.vert.spv";
-    std::string fsPath = exeDir.parent_path().string() + "/shaders/shadow.frag.spv";
+void ShadowSystem::createShadowPipelineInternal(VkDevice device, const std::string& shaderDir) {
+    std::string vsPath = shaderDir + "/shaders/shadow.vert.spv";
 
     auto vsCode = readFile(vsPath);
-    auto fsCode = readFile(fsPath);
     VkShaderModule vs = createShaderModule(device, vsCode);
-    VkShaderModule fs = createShaderModule(device, fsCode);
 
     VkPipelineShaderStageCreateInfo vsInfo{};
     vsInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -277,14 +289,7 @@ void ShadowSystem::createShadowPipelineInternal(VkDevice device, VkDescriptorSet
     vsInfo.module = vs;
     vsInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo fsInfo{};
-    fsInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fsInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fsInfo.module = fs;
-    fsInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo stages[] = {vsInfo, fsInfo};
-
+    // 顶点输入（仅位置）
     VkPipelineVertexInputStateCreateInfo vi{};
     vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     VkVertexInputBindingDescription bd{};
@@ -293,51 +298,33 @@ void ShadowSystem::createShadowPipelineInternal(VkDevice device, VkDescriptorSet
     bd.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     vi.vertexBindingDescriptionCount = 1;
     vi.pVertexBindingDescriptions = &bd;
-    std::array<VkVertexInputAttributeDescription, 3> attrs{};
-    attrs[0].location = 0;
-    attrs[0].binding = 0;
-    attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attrs[0].offset = offsetof(Vertex, pos);
-    attrs[1].location = 1;
-    attrs[1].binding = 0;
-    attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attrs[1].offset = offsetof(Vertex, normal);
-    attrs[2].location = 2;
-    attrs[2].binding = 0;
-    attrs[2].format = VK_FORMAT_R32G32_SFLOAT;
-    attrs[2].offset = offsetof(Vertex, uv);
-    vi.vertexAttributeDescriptionCount = (uint32_t)attrs.size();
-    vi.pVertexAttributeDescriptions = attrs.data();
+    VkVertexInputAttributeDescription attr{};
+    attr.location = 0;
+    attr.binding = 0;
+    attr.format = VK_FORMAT_R32G32B32_SFLOAT;
+    attr.offset = offsetof(Vertex, pos);
+    vi.vertexAttributeDescriptionCount = 1;
+    vi.pVertexAttributeDescriptions = &attr;
 
     VkPipelineInputAssemblyStateCreateInfo ia{};
     ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
-    VkViewport vp{};
-    vp.x = 0;
-    vp.y = 0;
-    vp.width = (float)MAP_SIZE;
-    vp.height = (float)MAP_SIZE;
-    vp.minDepth = 0;
-    vp.maxDepth = 1;
-
-    VkRect2D sc{};
-    sc.offset = {0, 0};
-    sc.extent = {MAP_SIZE, MAP_SIZE};
-
     VkPipelineViewportStateCreateInfo vpState{};
     vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     vpState.viewportCount = 1;
-    vpState.pViewports = &vp;
     vpState.scissorCount = 1;
-    vpState.pScissors = &sc;
 
     VkPipelineRasterizationStateCreateInfo rs{};
     rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rs.polygonMode = VK_POLYGON_MODE_FILL;
-    rs.cullMode = VK_CULL_MODE_BACK_BIT;
+    rs.cullMode = VK_CULL_MODE_FRONT_BIT;  // 剔除正面，减少阴影 acne
     rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rs.lineWidth = 1.0f;
+    rs.depthBiasEnable = VK_TRUE;
+    rs.depthBiasConstantFactor = 1.25f;
+    rs.depthBiasClamp = 0.0f;
+    rs.depthBiasSlopeFactor = 1.75f;
 
     VkPipelineMultisampleStateCreateInfo ms{};
     ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -353,19 +340,27 @@ void ShadowSystem::createShadowPipelineInternal(VkDevice device, VkDescriptorSet
     cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     cb.attachmentCount = 0;
 
-    // Pipeline layout with shadow sampler
-    std::array<VkDescriptorSetLayout, 2> layouts = {dslShadow, shadowSamplerLayout};
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = (uint32_t)dynamicStates.size();
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    // Pipeline layout: 只有 shadow UBO (set 0)
     VkPipelineLayoutCreateInfo pli{};
     pli.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pli.setLayoutCount = (uint32_t)layouts.size();
-    pli.pSetLayouts = layouts.data();
+    pli.setLayoutCount = 1;
+    pli.pSetLayouts = &dslShadow;
     if (vkCreatePipelineLayout(device, &pli, nullptr, &pipelineLayout) != VK_SUCCESS)
         throw std::runtime_error("shadow pipeline layout creation failed");
 
     VkGraphicsPipelineCreateInfo gpi{};
     gpi.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    gpi.stageCount = 2;
-    gpi.pStages = stages;
+    gpi.stageCount = 1;
+    gpi.pStages = &vsInfo;
     gpi.pVertexInputState = &vi;
     gpi.pInputAssemblyState = &ia;
     gpi.pViewportState = &vpState;
@@ -373,6 +368,7 @@ void ShadowSystem::createShadowPipelineInternal(VkDevice device, VkDescriptorSet
     gpi.pMultisampleState = &ms;
     gpi.pDepthStencilState = &ds;
     gpi.pColorBlendState = &cb;
+    gpi.pDynamicState = &dynamicState;
     gpi.layout = pipelineLayout;
     gpi.renderPass = renderPass;
     gpi.subpass = 0;
@@ -381,7 +377,6 @@ void ShadowSystem::createShadowPipelineInternal(VkDevice device, VkDescriptorSet
         throw std::runtime_error("shadow graphics pipeline creation failed");
 
     vkDestroyShaderModule(device, vs, nullptr);
-    vkDestroyShaderModule(device, fs, nullptr);
 }
 
 void ShadowSystem::createShadowFramebufferInternal(VkDevice device) {
@@ -403,7 +398,7 @@ void ShadowSystem::createShadowDescriptorLayoutInternal(VkDevice device) {
     binding.binding = 0;
     binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     binding.descriptorCount = 1;
-    binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkDescriptorSetLayoutCreateInfo li{};
     li.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -419,13 +414,14 @@ void ShadowSystem::createShadowSamplerInternal(VkDevice device) {
     si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     si.magFilter = VK_FILTER_LINEAR;
     si.minFilter = VK_FILTER_LINEAR;
-    si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
     si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     si.anisotropyEnable = VK_FALSE;
-    si.compareEnable = VK_TRUE;
-    si.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    // MoltenVK 不支持比较采样器，使用普通采样
+    si.compareEnable = VK_FALSE;
+    si.compareOp = VK_COMPARE_OP_ALWAYS;
 
     if (vkCreateSampler(device, &si, nullptr, &shadowSampler) != VK_SUCCESS)
         throw std::runtime_error("shadow sampler creation failed");

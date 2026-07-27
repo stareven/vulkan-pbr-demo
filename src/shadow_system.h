@@ -41,14 +41,14 @@ public:
     void initialize(VkDevice device, VkPhysicalDevice physicalDevice);
     void createShadowMap(VkDevice device, VkPhysicalDevice physicalDevice);
     void createShadowRenderPass(VkDevice device);
-    void createShadowPipeline(VkDevice device, VkDescriptorSetLayout shadowSamplerLayout);
+    void createShadowPipeline(VkDevice device, const std::string& shaderDir);
     void createShadowFramebuffer(VkDevice device);
     void createShadowDescriptorLayout(VkDevice device);
-    void createShadowDescriptorSets(VkDevice device, uint32_t imageCount);
+    void createShadowDescriptorSets(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t imageCount);
     void createShadowSampler(VkDevice device);
     void createShadowSamplerDescriptorLayout(VkDevice device);
     void createShadowSamplerDescriptorSets(VkDevice device, uint32_t imageCount, VkImageView shadowMapView);
-    void updateShadowUBO(uint32_t imageIndex, const Mat4& model);
+    void updateShadowUBO(VkDevice device, uint32_t imageIndex, const Mat4& model);
     void cleanup(VkDevice device);
 
     // Getters
@@ -68,7 +68,7 @@ public:
 private:
     void createShadowMapInternal(VkDevice device, VkPhysicalDevice physicalDevice);
     void createShadowRenderPassInternal(VkDevice device);
-    void createShadowPipelineInternal(VkDevice device, VkDescriptorSetLayout shadowSamplerLayout);
+    void createShadowPipelineInternal(VkDevice device, const std::string& shaderDir);
     void createShadowFramebufferInternal(VkDevice device);
     void createShadowDescriptorLayoutInternal(VkDevice device);
     void createShadowSamplerInternal(VkDevice device);

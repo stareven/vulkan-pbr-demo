@@ -16,23 +16,19 @@ void RenderPipeline::createRenderPass(VkDevice device, VkFormat swapchainFormat)
 
 void RenderPipeline::createPipelineLayout(VkDevice device, VkDescriptorSetLayout mvpLayout,
                                          VkDescriptorSetLayout materialLayout,
-                                         VkDescriptorSetLayout shadowLayout,
                                          VkDescriptorSetLayout shadowSamplerLayout) {
-    std::array<VkDescriptorSetLayout, 4> layouts = {
-        mvpLayout, materialLayout, shadowLayout, shadowSamplerLayout
-    };
+    VkDescriptorSetLayout layouts[] = {mvpLayout, materialLayout, shadowSamplerLayout};
     VkPipelineLayoutCreateInfo pli{};
     pli.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pli.setLayoutCount = (uint32_t)layouts.size();
-    pli.pSetLayouts = layouts.data();
+    pli.setLayoutCount = 3;
+    pli.pSetLayouts = layouts;
     if (vkCreatePipelineLayout(device, &pli, nullptr, &pipelineLayout) != VK_SUCCESS)
         throw std::runtime_error("pipeline layout creation failed");
 }
 
-void RenderPipeline::createGraphicsPipeline(VkDevice device, VkExtent2D extent) {
-    std::filesystem::path exeDir = std::filesystem::current_path();
-    std::string vsPath = exeDir.parent_path().string() + "/shaders/shader.vert.spv";
-    std::string fsPath = exeDir.parent_path().string() + "/shaders/shader.frag.spv";
+void RenderPipeline::createGraphicsPipeline(VkDevice device, VkExtent2D extent, const std::string& shaderDir) {
+    std::string vsPath = shaderDir + "/shaders/shader.vert.spv";
+    std::string fsPath = shaderDir + "/shaders/shader.frag.spv";
     createGraphicsPipelineInternal(device, extent, vsPath, fsPath);
 }
 
@@ -178,29 +174,15 @@ void RenderPipeline::createGraphicsPipelineInternal(VkDevice device, VkExtent2D 
     ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
-    VkViewport vp{};
-    vp.x = 0;
-    vp.y = 0;
-    vp.width = (float)extent.width;
-    vp.height = (float)extent.height;
-    vp.minDepth = 0;
-    vp.maxDepth = 1;
-
-    VkRect2D sc{};
-    sc.offset = {0, 0};
-    sc.extent = extent;
-
     VkPipelineViewportStateCreateInfo vpState{};
     vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     vpState.viewportCount = 1;
-    vpState.pViewports = &vp;
     vpState.scissorCount = 1;
-    vpState.pScissors = &sc;
 
     VkPipelineRasterizationStateCreateInfo rs{};
     rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rs.polygonMode = VK_POLYGON_MODE_FILL;
-    rs.cullMode = VK_CULL_MODE_BACK_BIT;
+    rs.cullMode = VK_CULL_MODE_NONE;
     rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rs.lineWidth = 1.0f;
 
@@ -217,12 +199,27 @@ void RenderPipeline::createGraphicsPipelineInternal(VkDevice device, VkExtent2D 
     VkPipelineColorBlendAttachmentState cbAtt{};
     cbAtt.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    cbAtt.blendEnable = VK_FALSE;
+    cbAtt.blendEnable = VK_TRUE;
+    cbAtt.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    cbAtt.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    cbAtt.colorBlendOp = VK_BLEND_OP_ADD;
+    cbAtt.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    cbAtt.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    cbAtt.alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo cb{};
     cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     cb.attachmentCount = 1;
     cb.pAttachments = &cbAtt;
+
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = (uint32_t)dynamicStates.size();
+    dynamicState.pDynamicStates = dynamicStates.data();
 
     VkGraphicsPipelineCreateInfo gpi{};
     gpi.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -235,6 +232,7 @@ void RenderPipeline::createGraphicsPipelineInternal(VkDevice device, VkExtent2D 
     gpi.pMultisampleState = &ms;
     gpi.pDepthStencilState = &ds;
     gpi.pColorBlendState = &cb;
+    gpi.pDynamicState = &dynamicState;
     gpi.layout = pipelineLayout;
     gpi.renderPass = renderPass;
     gpi.subpass = 0;
