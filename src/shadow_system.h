@@ -3,6 +3,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <string>
 #include <vector>
 #include "types.h"
 #include "math_utils.h"
@@ -13,6 +14,9 @@
 class ShadowSystem {
 private:
     static constexpr uint32_t MAP_SIZE = 2048;
+
+    VkDevice device = VK_NULL_HANDLE;
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
     VkImage shadowMapImage = VK_NULL_HANDLE;
     VkDeviceMemory shadowMapMemory = VK_NULL_HANDLE;
@@ -38,16 +42,11 @@ public:
     ShadowSystem() = default;
     ~ShadowSystem();
 
-    void initialize(VkDevice device, VkPhysicalDevice physicalDevice);
-    void createShadowMap(VkDevice device, VkPhysicalDevice physicalDevice);
-    void createShadowRenderPass(VkDevice device);
-    void createShadowPipeline(VkDevice device, const std::string& shaderDir);
-    void createShadowFramebuffer(VkDevice device);
-    void createShadowDescriptorLayout(VkDevice device);
-    void createShadowDescriptorSets(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t imageCount);
-    void createShadowSampler(VkDevice device);
-    void createShadowSamplerDescriptorLayout(VkDevice device);
-    void createShadowSamplerDescriptorSets(VkDevice device, uint32_t imageCount, VkImageView shadowMapView);
+    // 完整初始化（内部按正确顺序调用所有 create* 方法，包括 pipeline 和 descriptor sets）
+    // imageCount = swapchain 图像数量，用于分配 shadow sampler descriptor sets
+    void initialize(VkDevice device, VkPhysicalDevice physicalDevice,
+                    const std::string& shaderDir, uint32_t imageCount);
+
     void updateShadowUBO(VkDevice device, uint32_t imageIndex, const Mat4& model);
     void cleanup(VkDevice device);
 
@@ -64,11 +63,13 @@ public:
     const Mat4& getLightProj() const { return lightProj; }
 
 private:
-    void createShadowMapInternal(VkDevice device, VkPhysicalDevice physicalDevice);
-    void createShadowRenderPassInternal(VkDevice device);
-    void createShadowPipelineInternal(VkDevice device, const std::string& shaderDir);
-    void createShadowFramebufferInternal(VkDevice device);
-    void createShadowDescriptorLayoutInternal(VkDevice device);
-    void createShadowSamplerInternal(VkDevice device);
-    void createShadowSamplerDescriptorLayoutInternal(VkDevice device);
+    void createShadowMap(VkDevice device, VkPhysicalDevice physicalDevice);
+    void createShadowRenderPass(VkDevice device);
+    void createShadowPipeline(VkDevice device, const std::string& shaderDir);
+    void createShadowFramebuffer(VkDevice device);
+    void createShadowDescriptorLayout(VkDevice device);
+    void createShadowDescriptorSets(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t imageCount);
+    void createShadowSampler(VkDevice device);
+    void createShadowSamplerDescriptorLayout(VkDevice device);
+    void createShadowSamplerDescriptorSets(VkDevice device, uint32_t imageCount, VkImageView shadowMapView);
 };
