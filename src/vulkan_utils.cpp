@@ -37,7 +37,7 @@ bool checkLayerSupport(const std::vector<const char*>& validationLayers) {
 // ============================================================================
 // Shader Module
 // ============================================================================
-VkShaderModule makeShaderModule(VkDevice dev, const std::vector<char>& code) {
+VkShaderModule createShaderModule(VkDevice dev, const std::vector<char>& code) {
     VkShaderModuleCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     ci.codeSize = code.size();
@@ -69,10 +69,6 @@ QueueFamilies findQueues(VkPhysicalDevice pd, VkSurfaceKHR surf) {
 // ============================================================================
 // Buffer 辅助
 // ============================================================================
-VkDeviceSize alignUp(VkDeviceSize sz, VkDeviceSize align) {
-    return (sz + align - 1) & ~(align - 1);
-}
-
 void createBuffer(VkDevice dev, VkPhysicalDevice pd,
                   VkDeviceSize size, VkBufferUsageFlags usage,
                   VkMemoryPropertyFlags memProp,
@@ -138,28 +134,4 @@ void copyBuffer(VkDevice dev, VkQueue queue, VkCommandPool pool,
     vkQueueWaitIdle(queue);
 
     vkFreeCommandBuffers(dev, pool, 1, &cmd);
-}
-
-// ============================================================================
-// 内存类型查找
-// ============================================================================
-uint32_t findMemoryType(VkPhysicalDevice pd, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(pd, &memProperties);
-
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-        if ((typeFilter & (1 << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-
-    throw std::runtime_error("failed to find suitable memory type!");
-}
-
-// ============================================================================
-// Shader Module 创建（简化版）
-// ============================================================================
-VkShaderModule createShaderModule(VkDevice dev, const std::vector<char>& code) {
-    return makeShaderModule(dev, code);
 }

@@ -1,6 +1,7 @@
 # Build output
 build/
 CMakeLists.txt.user
+compile_commands.json
 
 # Compiled shaders
 *.spv

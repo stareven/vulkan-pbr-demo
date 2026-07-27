@@ -1,6 +1,4 @@
 #include "window.h"
-#include <iostream>
-#include <algorithm>
 #include <stdexcept>
 
 Window::Window(int width, int height, const std::string& title)
@@ -31,8 +29,6 @@ void Window::create() {
 
     glfwSetWindowUserPointer(handle, this);
     glfwSetFramebufferSizeCallback(handle, framebufferSizeCallback);
-    glfwSetCursorPosCallback(handle, cursorPosCallback);
-    glfwSetMouseButtonCallback(handle, mouseButtonCallback);
     glfwSetInputMode(handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 }
 
@@ -52,10 +48,6 @@ VkSurfaceKHR Window::createSurface(VkInstance instance) {
     return surface;
 }
 
-void Window::updateCamera() {
-    // 相机更新在回调中处理
-}
-
 void Window::destroy() {
     if (handle) {
         glfwDestroyWindow(handle);
@@ -66,25 +58,4 @@ void Window::destroy() {
 void Window::framebufferSizeCallback(GLFWwindow* window, int, int) {
     auto self = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
     self->framebufferResized = true;
-}
-
-void Window::cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
-    auto self = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
-    if (self->mouseDown) {
-        double dx = xpos - self->lastMouseX;
-        double dy = ypos - self->lastMouseY;
-        self->cameraYaw += dx * 0.005f;
-        self->cameraPitch -= dy * 0.005f;
-        self->cameraPitch = std::clamp(self->cameraPitch, -1.5f, 1.5f);
-    }
-    self->lastMouseX = xpos;
-    self->lastMouseY = ypos;
-}
-
-void Window::mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
-    auto self = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
-    if (button == GLFW_MOUSE_BUTTON_LEFT) {
-        self->mouseDown = (action == GLFW_PRESS);
-        glfwGetCursorPos(window, &self->lastMouseX, &self->lastMouseY);
-    }
 }

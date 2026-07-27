@@ -58,20 +58,6 @@ struct Mat4 {
         return res;
     }
 
-    static Mat4 translation(Vec3 t) {
-        Mat4 r = identity();
-        r.m[0][3] = t.x;
-        r.m[1][3] = t.y;
-        r.m[2][3] = t.z;
-        return r;
-    }
-
-    static Mat4 scale(float s) {
-        Mat4 r = identity();
-        r.m[0][0] = r.m[1][1] = r.m[2][2] = s;
-        return r;
-    }
-
     static Mat4 ortho(float left, float right, float bottom, float top, float near, float far) {
         Mat4 r{};
         r.m[0][0] = 2.0f / (right - left);

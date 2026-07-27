@@ -57,8 +57,6 @@ public:
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout; }
     VkFramebuffer getFramebuffer() const { return framebuffer; }
     VkImageView getShadowMapView() const { return shadowMapImageView; }
-    VkSampler getSampler() const { return shadowSampler; }
-    VkDescriptorSetLayout getShadowLayout() const { return dslShadow; }
     VkDescriptorSetLayout getSamplerLayout() const { return dslShadowSampler; }
     VkDescriptorSet getShadowSet(uint32_t index) const { return descSetsShadow[index]; }
     VkDescriptorSet getSamplerSet(uint32_t index) const { return descSetsShadowSampler[index]; }
