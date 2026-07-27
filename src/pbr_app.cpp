@@ -73,21 +73,21 @@ void PBRApp::initVulkan() {
     ctx.initialize(window.getHandle());
 
     // 初始化各 Manager（缓存 device/queue 等句柄，后续方法不再需要传）
-    renderPipeline.init(ctx.device);
-    descManager.init(ctx.device);
-    cmdManager.init(ctx.device);
-    syncManager.init(ctx.device);
-    meshManager.init(ctx.device, ctx.physicalDevice);
-    swapchain.init(ctx.device, ctx.physicalDevice);
+    renderPipeline.init(ctx.getDevice());
+    descManager.init(ctx.getDevice());
+    cmdManager.init(ctx.getDevice());
+    syncManager.init(ctx.getDevice());
+    meshManager.init(ctx.getDevice(), ctx.getPhysicalDevice());
+    swapchain.init(ctx.getDevice(), ctx.getPhysicalDevice());
 
     // 2. Swapchain（包含 image views + depth buffer）
-    swapchain.create(ctx.surface, window.getHandle());
+    swapchain.create(ctx.getSurface(), window.getHandle());
 
     // 3. 命令池（mesh upload 需要它）
-    cmdManager.createPool(ctx.graphicsFamily);
+    cmdManager.createPool(ctx.getGraphicsFamily());
 
     // 4. Mesh（顶点/索引缓冲）
-    meshManager.createMeshes(ctx.graphicsQueue, cmdManager.getPool());
+    meshManager.createMeshes(ctx.getGraphicsQueue(), cmdManager.getPool());
 
     // 5. 主 pass 的 Uniform 缓冲（MVP + Material）
     meshManager.createUniformBuffers(MAX_FRAMES_IN_FLIGHT);
@@ -96,7 +96,7 @@ void PBRApp::initVulkan() {
     descManager.createLayouts();
 
     // 7. 阴影系统（一次性完整初始化，包括 pipeline 和 descriptor sets）
-    shadowSystem.initialize(ctx.device, ctx.physicalDevice, shaderDir, swapchain.getImageCount());
+    shadowSystem.initialize(ctx.getDevice(), ctx.getPhysicalDevice(), shaderDir, swapchain.getImageCount());
 
     // 8. 主渲染通道 + 管线布局 + 图形管线 + 帧缓冲
     renderPipeline.createRenderPass(swapchain.getFormat());
@@ -179,7 +179,7 @@ void PBRApp::mainLoop() {
         drawFrame();
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
-    vkDeviceWaitIdle(ctx.device);
+    vkDeviceWaitIdle(ctx.getDevice());
 }
 
 // ============================================================================
@@ -189,7 +189,7 @@ void PBRApp::drawFrame() {
     syncManager.waitForFence();
 
     uint32_t imgIdx;
-    VkResult r = vkAcquireNextImageKHR(ctx.device, swapchain.getSwapchain(), UINT64_MAX,
+    VkResult r = vkAcquireNextImageKHR(ctx.getDevice(), swapchain.getSwapchain(), UINT64_MAX,
         syncManager.getImageAvailableSemaphore(), VK_NULL_HANDLE, &imgIdx);
 
     if (r == VK_ERROR_OUT_OF_DATE_KHR || window.isFramebufferResized()) {
@@ -230,8 +230,8 @@ void PBRApp::drawFrame() {
     shadowSubmit.commandBufferCount = 1;
     VkCommandBuffer shadowCmd = cmdManager.getShadowCommandBuffer();
     shadowSubmit.pCommandBuffers = &shadowCmd;
-    vkQueueSubmit(ctx.graphicsQueue, 1, &shadowSubmit, VK_NULL_HANDLE);
-    vkQueueWaitIdle(ctx.graphicsQueue);
+    vkQueueSubmit(ctx.getGraphicsQueue(), 1, &shadowSubmit, VK_NULL_HANDLE);
+    vkQueueWaitIdle(ctx.getGraphicsQueue());
 
     // 2) 主 pass
     recordCommandBuffer(imgIdx);
@@ -253,7 +253,7 @@ void PBRApp::drawFrame() {
     si.signalSemaphoreCount = 1;
     si.pSignalSemaphores = sig;
 
-    if (vkQueueSubmit(ctx.graphicsQueue, 1, &si, syncManager.getInFlightFence()) != VK_SUCCESS)
+    if (vkQueueSubmit(ctx.getGraphicsQueue(), 1, &si, syncManager.getInFlightFence()) != VK_SUCCESS)
         throw std::runtime_error("queue submit failed");
 
     VkSwapchainKHR sc = swapchain.getSwapchain();
@@ -264,7 +264,7 @@ void PBRApp::drawFrame() {
     pi.swapchainCount = 1;
     pi.pSwapchains = &sc;
     pi.pImageIndices = &imgIdx;
-    r = vkQueuePresentKHR(ctx.presentQueue, &pi);
+    r = vkQueuePresentKHR(ctx.getPresentQueue(), &pi);
 
     if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR || window.isFramebufferResized()) {
         window.resetFramebufferResized();
@@ -384,11 +384,11 @@ void PBRApp::recordCommandBuffer(uint32_t imgIdx) {
 // Swapchain 重建
 // ============================================================================
 void PBRApp::recreateSwapchain() {
-    vkDeviceWaitIdle(ctx.device);
+    vkDeviceWaitIdle(ctx.getDevice());
 
     // 销毁依赖 swapchain extent 的资源
     renderPipeline.cleanup();
-    swapchain.recreate(ctx.surface, window.getHandle());
+    swapchain.recreate(ctx.getSurface(), window.getHandle());
 
     // 重建依赖 swapchain 的资源
     renderPipeline.createRenderPass(swapchain.getFormat());
@@ -405,7 +405,7 @@ void PBRApp::recreateSwapchain() {
 // 清理
 // ============================================================================
 void PBRApp::cleanup() {
-    vkDeviceWaitIdle(ctx.device);
+    vkDeviceWaitIdle(ctx.getDevice());
 
     // 按 reverse-init 顺序清理各 Manager
     cmdManager.cleanup();
