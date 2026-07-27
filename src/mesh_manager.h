@@ -11,6 +11,9 @@
 // ============================================================================
 class MeshManager {
 private:
+    VkDevice device = VK_NULL_HANDLE;
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+
     // 主网格（球体）
     VkBuffer vbo = VK_NULL_HANDLE;
     VkBuffer ibo = VK_NULL_HANDLE;
@@ -35,14 +38,14 @@ public:
     MeshManager() = default;
     ~MeshManager();
 
-    void createMeshes(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue graphicsQueue, VkCommandPool cmdPool);
-    void createUniformBuffers(VkDevice device, VkPhysicalDevice physicalDevice, size_t imageCount);
-    void updateUniformBuffers(VkDevice device, uint32_t imageIndex, const Mat4& model, const Mat4& view, const Mat4& proj,
+    void init(VkDevice dev, VkPhysicalDevice pd) { device = dev; physicalDevice = pd; }
+    void createMeshes(VkQueue graphicsQueue, VkCommandPool cmdPool);
+    void createUniformBuffers(size_t imageCount);
+    void updateUniformBuffers(uint32_t imageIndex, const Mat4& model, const Mat4& view, const Mat4& proj,
                              const Mat4& lightSpaceMatrix, const Vec3& cameraPos,
                              int materialPreset, bool glassEnabled, bool emissiveEnabled);
-    void cleanup(VkDevice device);
+    void cleanup();
 
-    // Getters
     VkBuffer getSphereVBO() const { return vbo; }
     VkBuffer getSphereIBO() const { return ibo; }
     uint32_t getSphereIndexCount() const { return indexCount; }
@@ -53,8 +56,4 @@ public:
 
     VkBuffer getMVPBuffer(uint32_t index) const { return uboMVPBuf[index]; }
     VkBuffer getMaterialBuffer(uint32_t index) const { return uboMatBuf[index]; }
-
-private:
-    void createSphereMesh(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue graphicsQueue, VkCommandPool cmdPool);
-    void createPlaneMesh(VkDevice device, VkPhysicalDevice physicalDevice, VkQueue graphicsQueue, VkCommandPool cmdPool);
 };

@@ -10,13 +10,14 @@
 // ============================================================================
 class SwapchainManager {
 private:
+    VkDevice device = VK_NULL_HANDLE;
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat format;
     VkExtent2D extent;
     std::vector<VkImage> images;
     std::vector<VkImageView> imageViews;
 
-    // 深度缓冲
     VkImage depthImage = VK_NULL_HANDLE;
     VkDeviceMemory depthMemory = VK_NULL_HANDLE;
     VkImageView depthImageView = VK_NULL_HANDLE;
@@ -25,11 +26,10 @@ public:
     SwapchainManager() = default;
     ~SwapchainManager();
 
-    void create(VkDevice device, VkPhysicalDevice physicalDevice,
-                VkSurfaceKHR surface, GLFWwindow* window);
-    void recreate(VkDevice device, VkPhysicalDevice physicalDevice,
-                  VkSurfaceKHR surface, GLFWwindow* window);
-    void cleanup(VkDevice device);
+    void init(VkDevice dev, VkPhysicalDevice pd) { device = dev; physicalDevice = pd; }
+    void create(VkSurfaceKHR surface, GLFWwindow* window);
+    void recreate(VkSurfaceKHR surface, GLFWwindow* window);
+    void cleanup();
 
     VkSwapchainKHR getSwapchain() const { return swapchain; }
     VkFormat getFormat() const { return format; }
@@ -39,8 +39,7 @@ public:
     uint32_t getImageCount() const { return (uint32_t)images.size(); }
 
 private:
-    void createSwapchain(VkDevice device, VkPhysicalDevice physicalDevice,
-                        VkSurfaceKHR surface, GLFWwindow* window);
-    void createImageViews(VkDevice device);
-    void createDepthBuffer(VkDevice device, VkPhysicalDevice physicalDevice);
+    void createSwapchainInternal(VkSurfaceKHR surface, GLFWwindow* window);
+    void createImageViews();
+    void createDepthBuffer();
 };

@@ -12,21 +12,23 @@ ShadowSystem::~ShadowSystem() {
 
 void ShadowSystem::initialize(VkDevice device, VkPhysicalDevice physicalDevice,
                               const std::string& shaderDir, uint32_t imageCount) {
-    createShadowMap(device, physicalDevice);
-    createShadowRenderPass(device);
-    createShadowDescriptorLayout(device);
-    createShadowSampler(device);
-    createShadowSamplerDescriptorLayout(device);
-    createShadowPipeline(device, shaderDir);
-    createShadowFramebuffer(device);
-    createShadowDescriptorSets(device, physicalDevice, imageCount);
-    createShadowSamplerDescriptorSets(device, imageCount, shadowMapImageView);
+    this->device = device;
+    this->physicalDevice = physicalDevice;
+    createShadowMap(physicalDevice);
+    createShadowRenderPass();
+    createShadowDescriptorLayout();
+    createShadowSampler();
+    createShadowSamplerDescriptorLayout();
+    createShadowPipeline(shaderDir);
+    createShadowFramebuffer();
+    createShadowDescriptorSets(physicalDevice, imageCount);
+    createShadowSamplerDescriptorSets(imageCount, shadowMapImageView);
 }
 
 // ============================================================================
 // Shadow map image
 // ============================================================================
-void ShadowSystem::createShadowMap(VkDevice device, VkPhysicalDevice physicalDevice) {
+void ShadowSystem::createShadowMap(VkPhysicalDevice physicalDevice) {
     VkImageCreateInfo ii{};
     ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     ii.imageType = VK_IMAGE_TYPE_2D;
@@ -77,7 +79,7 @@ void ShadowSystem::createShadowMap(VkDevice device, VkPhysicalDevice physicalDev
 // ============================================================================
 // Shadow render pass (depth-only)
 // ============================================================================
-void ShadowSystem::createShadowRenderPass(VkDevice device) {
+void ShadowSystem::createShadowRenderPass() {
     VkAttachmentDescription att{};
     att.format = VK_FORMAT_D32_SFLOAT;
     att.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -120,7 +122,7 @@ void ShadowSystem::createShadowRenderPass(VkDevice device) {
 // ============================================================================
 // Shadow descriptor layout (UBO)
 // ============================================================================
-void ShadowSystem::createShadowDescriptorLayout(VkDevice device) {
+void ShadowSystem::createShadowDescriptorLayout() {
     VkDescriptorSetLayoutBinding binding{};
     binding.binding = 0;
     binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -139,7 +141,7 @@ void ShadowSystem::createShadowDescriptorLayout(VkDevice device) {
 // ============================================================================
 // Shadow sampler (for main pass to sample the shadow map)
 // ============================================================================
-void ShadowSystem::createShadowSampler(VkDevice device) {
+void ShadowSystem::createShadowSampler() {
     VkSamplerCreateInfo si{};
     si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     si.magFilter = VK_FILTER_LINEAR;
@@ -157,7 +159,7 @@ void ShadowSystem::createShadowSampler(VkDevice device) {
         throw std::runtime_error("shadow sampler creation failed");
 }
 
-void ShadowSystem::createShadowSamplerDescriptorLayout(VkDevice device) {
+void ShadowSystem::createShadowSamplerDescriptorLayout() {
     VkDescriptorSetLayoutBinding binding{};
     binding.binding = 0;
     binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -176,7 +178,7 @@ void ShadowSystem::createShadowSamplerDescriptorLayout(VkDevice device) {
 // ============================================================================
 // Shadow pipeline (vertex-only, with depth bias for acne reduction)
 // ============================================================================
-void ShadowSystem::createShadowPipeline(VkDevice device, const std::string& shaderDir) {
+void ShadowSystem::createShadowPipeline(const std::string& shaderDir) {
     std::string vsPath = shaderDir + "/shaders/shadow.vert.spv";
     auto vsCode = readFile(vsPath);
     VkShaderModule vs = createShaderModule(device, vsCode);
@@ -278,7 +280,7 @@ void ShadowSystem::createShadowPipeline(VkDevice device, const std::string& shad
 // ============================================================================
 // Shadow framebuffer (2048x2048 depth-only)
 // ============================================================================
-void ShadowSystem::createShadowFramebuffer(VkDevice device) {
+void ShadowSystem::createShadowFramebuffer() {
     VkFramebufferCreateInfo fbi{};
     fbi.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     fbi.renderPass = renderPass;
@@ -295,7 +297,7 @@ void ShadowSystem::createShadowFramebuffer(VkDevice device) {
 // ============================================================================
 // Shadow descriptor sets (per-frame UBO bound to dslShadow)
 // ============================================================================
-void ShadowSystem::createShadowDescriptorSets(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t imageCount) {
+void ShadowSystem::createShadowDescriptorSets(VkPhysicalDevice physicalDevice, uint32_t imageCount) {
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSize.descriptorCount = imageCount;
@@ -350,7 +352,7 @@ void ShadowSystem::createShadowDescriptorSets(VkDevice device, VkPhysicalDevice 
 // ============================================================================
 // Shadow sampler descriptor sets (per-image, bound to dslShadowSampler)
 // ============================================================================
-void ShadowSystem::createShadowSamplerDescriptorSets(VkDevice device, uint32_t imageCount, VkImageView shadowMapView) {
+void ShadowSystem::createShadowSamplerDescriptorSets(uint32_t imageCount, VkImageView shadowMapView) {
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSize.descriptorCount = imageCount;
@@ -398,7 +400,7 @@ void ShadowSystem::createShadowSamplerDescriptorSets(VkDevice device, uint32_t i
 // ============================================================================
 // UBO updates
 // ============================================================================
-void ShadowSystem::updateShadowUBO(VkDevice device, uint32_t imageIndex, const Mat4& model) {
+void ShadowSystem::updateShadowUBO(uint32_t imageIndex, const Mat4& model) {
     Vec3 lightPos{10, 10, 10};
     Vec3 lightTarget{0, 0, 0};
     Vec3 lightUp{0, 1, 0};
@@ -419,7 +421,7 @@ void ShadowSystem::updateShadowUBO(VkDevice device, uint32_t imageIndex, const M
 // ============================================================================
 // Cleanup
 // ============================================================================
-void ShadowSystem::cleanup(VkDevice device) {
+void ShadowSystem::cleanup() {
     for (auto buf : uboShadowBuf) {
         if (buf) vkDestroyBuffer(device, buf, nullptr);
     }

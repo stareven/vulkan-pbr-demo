@@ -10,6 +10,7 @@
 // ============================================================================
 class SyncManager {
 private:
+    VkDevice device = VK_NULL_HANDLE;
     // 按 maxFramesInFlight 分配：每帧在飞有自己的信号量 + fence
     std::vector<VkSemaphore> imageAvailable;
     std::vector<VkSemaphore> renderFinished;
@@ -23,11 +24,12 @@ private:
 public:
     SyncManager(uint32_t maxFrames = 2);
 
-    void create(VkDevice device, uint32_t imageCount);
-    void cleanup(VkDevice device);
+    void init(VkDevice dev) { device = dev; }
+    void create(uint32_t imageCount);
+    void cleanup();
 
-    void waitForFence(VkDevice device);
-    void resetFence(VkDevice device);
+    void waitForFence();
+    void resetFence();
     void markImageInFlight(uint32_t imageIndex);
 
     VkSemaphore getImageAvailableSemaphore() const;
@@ -37,7 +39,4 @@ public:
     uint32_t getCurrentFrame() const { return currentFrame; }
     uint32_t getImageCount() const { return imageCount; }
     void advanceFrame();
-
-private:
-    void createSyncObjects(VkDevice device);
 };

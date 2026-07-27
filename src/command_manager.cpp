@@ -5,11 +5,17 @@ CommandManager::~CommandManager() {
     // Cleanup should be called explicitly
 }
 
-void CommandManager::createPool(VkDevice device, uint32_t graphicsFamily) {
-    createCommandPoolInternal(device, graphicsFamily);
+void CommandManager::createPool(uint32_t graphicsFamily) {
+    VkCommandPoolCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    ci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    ci.queueFamilyIndex = graphicsFamily;
+
+    if (vkCreateCommandPool(device, &ci, nullptr, &pool) != VK_SUCCESS)
+        throw std::runtime_error("command pool creation failed");
 }
 
-void CommandManager::allocateBuffers(VkDevice device, uint32_t count) {
+void CommandManager::allocateBuffers(uint32_t count) {
     buffers.resize(count);
 
     VkCommandBufferAllocateInfo ai{};
@@ -22,7 +28,7 @@ void CommandManager::allocateBuffers(VkDevice device, uint32_t count) {
         throw std::runtime_error("command buffer allocation failed");
 }
 
-void CommandManager::allocateShadowCommandBuffer(VkDevice device) {
+void CommandManager::allocateShadowCommandBuffer() {
     VkCommandBufferAllocateInfo ai{};
     ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     ai.commandPool = pool;
@@ -33,20 +39,10 @@ void CommandManager::allocateShadowCommandBuffer(VkDevice device) {
         throw std::runtime_error("shadow command buffer allocation failed");
 }
 
-void CommandManager::cleanup(VkDevice device) {
+void CommandManager::cleanup() {
     if (pool) {
         vkDestroyCommandPool(device, pool, nullptr);
         pool = VK_NULL_HANDLE;
     }
     buffers.clear();
-}
-
-void CommandManager::createCommandPoolInternal(VkDevice device, uint32_t graphicsFamily) {
-    VkCommandPoolCreateInfo ci{};
-    ci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    ci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    ci.queueFamilyIndex = graphicsFamily;
-
-    if (vkCreateCommandPool(device, &ci, nullptr, &pool) != VK_SUCCESS)
-        throw std::runtime_error("command pool creation failed");
 }

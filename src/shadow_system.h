@@ -44,11 +44,11 @@ public:
 
     // 完整初始化（内部按正确顺序调用所有 create* 方法，包括 pipeline 和 descriptor sets）
     // imageCount = swapchain 图像数量，用于分配 shadow sampler descriptor sets
-    void initialize(VkDevice device, VkPhysicalDevice physicalDevice,
+    void initialize(VkDevice dev, VkPhysicalDevice pd,
                     const std::string& shaderDir, uint32_t imageCount);
 
-    void updateShadowUBO(VkDevice device, uint32_t imageIndex, const Mat4& model);
-    void cleanup(VkDevice device);
+    void updateShadowUBO(uint32_t imageIndex, const Mat4& model);
+    void cleanup();
 
     // Getters
     VkRenderPass getRenderPass() const { return renderPass; }
@@ -63,13 +63,13 @@ public:
     const Mat4& getLightProj() const { return lightProj; }
 
 private:
-    void createShadowMap(VkDevice device, VkPhysicalDevice physicalDevice);
-    void createShadowRenderPass(VkDevice device);
-    void createShadowPipeline(VkDevice device, const std::string& shaderDir);
-    void createShadowFramebuffer(VkDevice device);
-    void createShadowDescriptorLayout(VkDevice device);
-    void createShadowDescriptorSets(VkDevice device, VkPhysicalDevice physicalDevice, uint32_t imageCount);
-    void createShadowSampler(VkDevice device);
-    void createShadowSamplerDescriptorLayout(VkDevice device);
-    void createShadowSamplerDescriptorSets(VkDevice device, uint32_t imageCount, VkImageView shadowMapView);
+    void createShadowMap(VkPhysicalDevice physicalDevice);
+    void createShadowRenderPass();
+    void createShadowPipeline(const std::string& shaderDir);
+    void createShadowFramebuffer();
+    void createShadowDescriptorLayout();
+    void createShadowDescriptorSets(VkPhysicalDevice physicalDevice, uint32_t imageCount);
+    void createShadowSampler();
+    void createShadowSamplerDescriptorLayout();
+    void createShadowSamplerDescriptorSets(uint32_t imageCount, VkImageView shadowMapView);
 };

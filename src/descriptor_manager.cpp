@@ -8,12 +8,29 @@ DescriptorManager::~DescriptorManager() {
     // Cleanup should be called explicitly
 }
 
-void DescriptorManager::createLayouts(VkDevice device) {
-    createMVPLayout(device);
-    createMaterialLayout(device);
+void DescriptorManager::createLayouts() {
+    // MVP layout (set 0, vertex shader)
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo li{};
+    li.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    li.bindingCount = 1;
+    li.pBindings = &binding;
+
+    if (vkCreateDescriptorSetLayout(device, &li, nullptr, &dslMVP) != VK_SUCCESS)
+        throw std::runtime_error("MVP descriptor layout creation failed");
+
+    // Material layout (set 1, fragment shader)
+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    if (vkCreateDescriptorSetLayout(device, &li, nullptr, &dslMat) != VK_SUCCESS)
+        throw std::runtime_error("Material descriptor layout creation failed");
 }
 
-void DescriptorManager::createPool(VkDevice device, uint32_t imageCount) {
+void DescriptorManager::createPool(uint32_t imageCount) {
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = imageCount * 2; // MVP + Material
@@ -30,7 +47,7 @@ void DescriptorManager::createPool(VkDevice device, uint32_t imageCount) {
         throw std::runtime_error("descriptor pool creation failed");
 }
 
-void DescriptorManager::allocateSets(VkDevice device, uint32_t imageCount) {
+void DescriptorManager::allocateSets(uint32_t imageCount) {
     setsMVP.resize(imageCount);
     setsMat.resize(imageCount);
 
@@ -51,8 +68,7 @@ void DescriptorManager::allocateSets(VkDevice device, uint32_t imageCount) {
         throw std::runtime_error("Material descriptor set allocation failed");
 }
 
-void DescriptorManager::updateSets(VkDevice device, uint32_t imageIndex, VkBuffer mvpBuffer, VkBuffer matBuffer) {
-    // Update MVP set
+void DescriptorManager::updateSets(uint32_t imageIndex, VkBuffer mvpBuffer, VkBuffer matBuffer) {
     VkDescriptorBufferInfo mvpInfo{};
     mvpInfo.buffer = mvpBuffer;
     mvpInfo.offset = 0;
@@ -66,7 +82,6 @@ void DescriptorManager::updateSets(VkDevice device, uint32_t imageIndex, VkBuffe
     mvpWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     mvpWrite.pBufferInfo = &mvpInfo;
 
-    // Update Material set
     VkDescriptorBufferInfo matInfo{};
     matInfo.buffer = matBuffer;
     matInfo.offset = 0;
@@ -84,7 +99,7 @@ void DescriptorManager::updateSets(VkDevice device, uint32_t imageIndex, VkBuffe
     vkUpdateDescriptorSets(device, (uint32_t)writes.size(), writes.data(), 0, nullptr);
 }
 
-void DescriptorManager::cleanup(VkDevice device) {
+void DescriptorManager::cleanup() {
     if (pool) {
         vkDestroyDescriptorPool(device, pool, nullptr);
         pool = VK_NULL_HANDLE;
@@ -99,36 +114,4 @@ void DescriptorManager::cleanup(VkDevice device) {
     }
     setsMVP.clear();
     setsMat.clear();
-}
-
-void DescriptorManager::createMVPLayout(VkDevice device) {
-    VkDescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
-    binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    binding.descriptorCount = 1;
-    binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutCreateInfo li{};
-    li.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    li.bindingCount = 1;
-    li.pBindings = &binding;
-
-    if (vkCreateDescriptorSetLayout(device, &li, nullptr, &dslMVP) != VK_SUCCESS)
-        throw std::runtime_error("MVP descriptor layout creation failed");
-}
-
-void DescriptorManager::createMaterialLayout(VkDevice device) {
-    VkDescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
-    binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    binding.descriptorCount = 1;
-    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutCreateInfo li{};
-    li.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    li.bindingCount = 1;
-    li.pBindings = &binding;
-
-    if (vkCreateDescriptorSetLayout(device, &li, nullptr, &dslMat) != VK_SUCCESS)
-        throw std::runtime_error("Material descriptor layout creation failed");
 }

@@ -3,74 +3,13 @@
 #include "types.h"
 
 #include <array>
-#include <filesystem>
 #include <stdexcept>
 
 RenderPipeline::~RenderPipeline() {
-    // Cleanup should be called explicitly with device
+    // Cleanup should be called explicitly
 }
 
-void RenderPipeline::createRenderPass(VkDevice device, VkFormat swapchainFormat) {
-    createRenderPassInternal(device, swapchainFormat);
-}
-
-void RenderPipeline::createPipelineLayout(VkDevice device, VkDescriptorSetLayout mvpLayout,
-                                         VkDescriptorSetLayout materialLayout,
-                                         VkDescriptorSetLayout shadowSamplerLayout) {
-    VkDescriptorSetLayout layouts[] = {mvpLayout, materialLayout, shadowSamplerLayout};
-    VkPipelineLayoutCreateInfo pli{};
-    pli.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pli.setLayoutCount = 3;
-    pli.pSetLayouts = layouts;
-    if (vkCreatePipelineLayout(device, &pli, nullptr, &pipelineLayout) != VK_SUCCESS)
-        throw std::runtime_error("pipeline layout creation failed");
-}
-
-void RenderPipeline::createGraphicsPipeline(VkDevice device, VkExtent2D extent, const std::string& shaderDir) {
-    std::string vsPath = shaderDir + "/shaders/shader.vert.spv";
-    std::string fsPath = shaderDir + "/shaders/shader.frag.spv";
-    createGraphicsPipelineInternal(device, extent, vsPath, fsPath);
-}
-
-void RenderPipeline::createFramebuffers(VkDevice device, VkExtent2D extent,
-                                       const std::vector<VkImageView>& swapchainViews,
-                                       VkImageView depthView) {
-    framebuffers.resize(swapchainViews.size());
-    for (size_t i = 0; i < swapchainViews.size(); ++i) {
-        std::array<VkImageView, 2> attachments = {swapchainViews[i], depthView};
-        VkFramebufferCreateInfo fbi{};
-        fbi.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fbi.renderPass = renderPass;
-        fbi.attachmentCount = (uint32_t)attachments.size();
-        fbi.pAttachments = attachments.data();
-        fbi.width = extent.width;
-        fbi.height = extent.height;
-        fbi.layers = 1;
-        if (vkCreateFramebuffer(device, &fbi, nullptr, &framebuffers[i]) != VK_SUCCESS)
-            throw std::runtime_error("framebuffer creation failed");
-    }
-}
-
-void RenderPipeline::cleanup(VkDevice device) {
-    for (auto fb : framebuffers) {
-        if (fb) vkDestroyFramebuffer(device, fb, nullptr);
-    }
-    framebuffers.clear();
-    if (pipeline) {
-        vkDestroyPipeline(device, pipeline, nullptr);
-        pipeline = VK_NULL_HANDLE;
-    }
-    if (pipelineLayout) {
-        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-        pipelineLayout = VK_NULL_HANDLE;
-    }
-    if (renderPass) {
-        vkDestroyRenderPass(device, renderPass, nullptr);
-        renderPass = VK_NULL_HANDLE;
-    }
-}
-
-void RenderPipeline::createRenderPassInternal(VkDevice device, VkFormat swapchainFormat) {
+void RenderPipeline::createRenderPass(VkFormat swapchainFormat) {
     std::array<VkAttachmentDescription, 2> att{};
     // Color
     att[0].format = swapchainFormat;
@@ -124,11 +63,24 @@ void RenderPipeline::createRenderPassInternal(VkDevice device, VkFormat swapchai
         throw std::runtime_error("render pass creation failed");
 }
 
-void RenderPipeline::createGraphicsPipelineInternal(VkDevice device, VkExtent2D extent,
-                                                    const std::string& vertexShaderPath,
-                                                    const std::string& fragmentShaderPath) {
-    auto vsCode = readFile(vertexShaderPath);
-    auto fsCode = readFile(fragmentShaderPath);
+void RenderPipeline::createPipelineLayout(VkDescriptorSetLayout mvpLayout,
+                                         VkDescriptorSetLayout materialLayout,
+                                         VkDescriptorSetLayout shadowSamplerLayout) {
+    VkDescriptorSetLayout layouts[] = {mvpLayout, materialLayout, shadowSamplerLayout};
+    VkPipelineLayoutCreateInfo pli{};
+    pli.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pli.setLayoutCount = 3;
+    pli.pSetLayouts = layouts;
+    if (vkCreatePipelineLayout(device, &pli, nullptr, &pipelineLayout) != VK_SUCCESS)
+        throw std::runtime_error("pipeline layout creation failed");
+}
+
+void RenderPipeline::createGraphicsPipeline(VkExtent2D extent, const std::string& shaderDir) {
+    std::string vsPath = shaderDir + "/shaders/shader.vert.spv";
+    std::string fsPath = shaderDir + "/shaders/shader.frag.spv";
+
+    auto vsCode = readFile(vsPath);
+    auto fsCode = readFile(fsPath);
     VkShaderModule vs = createShaderModule(device, vsCode);
     VkShaderModule fs = createShaderModule(device, fsCode);
 
@@ -242,4 +194,42 @@ void RenderPipeline::createGraphicsPipelineInternal(VkDevice device, VkExtent2D 
 
     vkDestroyShaderModule(device, vs, nullptr);
     vkDestroyShaderModule(device, fs, nullptr);
+}
+
+void RenderPipeline::createFramebuffers(VkExtent2D extent,
+                                       const std::vector<VkImageView>& swapchainViews,
+                                       VkImageView depthView) {
+    framebuffers.resize(swapchainViews.size());
+    for (size_t i = 0; i < swapchainViews.size(); ++i) {
+        std::array<VkImageView, 2> attachments = {swapchainViews[i], depthView};
+        VkFramebufferCreateInfo fbi{};
+        fbi.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbi.renderPass = renderPass;
+        fbi.attachmentCount = (uint32_t)attachments.size();
+        fbi.pAttachments = attachments.data();
+        fbi.width = extent.width;
+        fbi.height = extent.height;
+        fbi.layers = 1;
+        if (vkCreateFramebuffer(device, &fbi, nullptr, &framebuffers[i]) != VK_SUCCESS)
+            throw std::runtime_error("framebuffer creation failed");
+    }
+}
+
+void RenderPipeline::cleanup() {
+    for (auto fb : framebuffers) {
+        if (fb) vkDestroyFramebuffer(device, fb, nullptr);
+    }
+    framebuffers.clear();
+    if (pipeline) {
+        vkDestroyPipeline(device, pipeline, nullptr);
+        pipeline = VK_NULL_HANDLE;
+    }
+    if (pipelineLayout) {
+        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        pipelineLayout = VK_NULL_HANDLE;
+    }
+    if (renderPass) {
+        vkDestroyRenderPass(device, renderPass, nullptr);
+        renderPass = VK_NULL_HANDLE;
+    }
 }

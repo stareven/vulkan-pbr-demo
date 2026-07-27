@@ -72,52 +72,59 @@ void PBRApp::initVulkan() {
     // 1. 核心 Vulkan 上下文
     ctx.initialize(window.getHandle());
 
+    // 初始化各 Manager（缓存 device/queue 等句柄，后续方法不再需要传）
+    renderPipeline.init(ctx.device);
+    descManager.init(ctx.device);
+    cmdManager.init(ctx.device);
+    syncManager.init(ctx.device);
+    meshManager.init(ctx.device, ctx.physicalDevice);
+    swapchain.init(ctx.device, ctx.physicalDevice);
+
     // 2. Swapchain（包含 image views + depth buffer）
-    swapchain.create(ctx.device, ctx.physicalDevice, ctx.surface, window.getHandle());
+    swapchain.create(ctx.surface, window.getHandle());
 
     // 3. 命令池（mesh upload 需要它）
-    cmdManager.createPool(ctx.device, ctx.graphicsFamily);
+    cmdManager.createPool(ctx.graphicsFamily);
 
     // 4. Mesh（顶点/索引缓冲）
-    meshManager.createMeshes(ctx.device, ctx.physicalDevice,
-                             ctx.graphicsQueue, cmdManager.getPool());
+    meshManager.createMeshes(ctx.graphicsQueue, cmdManager.getPool());
 
     // 5. 主 pass 的 Uniform 缓冲（MVP + Material）
-    meshManager.createUniformBuffers(ctx.device, ctx.physicalDevice, MAX_FRAMES_IN_FLIGHT);
+    meshManager.createUniformBuffers(MAX_FRAMES_IN_FLIGHT);
 
     // 6. Descriptor 布局（MVP + Material）
-    descManager.createLayouts(ctx.device);
+    descManager.createLayouts();
 
     // 7. 阴影系统（一次性完整初始化，包括 pipeline 和 descriptor sets）
     shadowSystem.initialize(ctx.device, ctx.physicalDevice, shaderDir, swapchain.getImageCount());
 
     // 8. 主渲染通道 + 管线布局 + 图形管线 + 帧缓冲
-    renderPipeline.createRenderPass(ctx.device, swapchain.getFormat());
-    renderPipeline.createPipelineLayout(ctx.device,
+    renderPipeline.createRenderPass(swapchain.getFormat());
+    renderPipeline.createPipelineLayout(
         descManager.getMVPLayout(),
         descManager.getMaterialLayout(),
-        shadowSystem.getSamplerLayout());   // set 2 = shadow sampler
-    renderPipeline.createGraphicsPipeline(ctx.device, swapchain.getExtent(), shaderDir);
-    renderPipeline.createFramebuffers(ctx.device, swapchain.getExtent(),
+        shadowSystem.getSamplerLayout());
+    renderPipeline.createGraphicsPipeline(swapchain.getExtent(), shaderDir);
+    renderPipeline.createFramebuffers(swapchain.getExtent(),
         swapchain.getImageViews(), swapchain.getDepthImageView());
 
     // 9. Sync objects
-    syncManager.create(ctx.device, swapchain.getImageCount());
+    syncManager.create(swapchain.getImageCount());
 
     // 10. Descriptor pool + 主 pass 的 descriptor sets
-    descManager.createPool(ctx.device, MAX_FRAMES_IN_FLIGHT);
-    descManager.allocateSets(ctx.device, MAX_FRAMES_IN_FLIGHT);
+    descManager.createPool(MAX_FRAMES_IN_FLIGHT);
+    descManager.allocateSets(MAX_FRAMES_IN_FLIGHT);
 
     // 绑定每帧的 descriptor set 到对应的 UBO（一次性完成，之后每帧只写 UBO 内存）
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        descManager.updateSets(ctx.device, i,
+        descManager.updateSets(i,
             meshManager.getMVPBuffer(i),
             meshManager.getMaterialBuffer(i));
     }
 
     // 11. 命令缓冲
-    cmdManager.allocateBuffers(ctx.device, MAX_FRAMES_IN_FLIGHT);
-    cmdManager.allocateShadowCommandBuffer(ctx.device);
+    cmdManager.allocateBuffers(MAX_FRAMES_IN_FLIGHT);
+    cmdManager.allocateShadowCommandBuffer();
 }
 
 // ============================================================================
@@ -179,7 +186,7 @@ void PBRApp::mainLoop() {
 // 单帧渲染
 // ============================================================================
 void PBRApp::drawFrame() {
-    syncManager.waitForFence(ctx.device);
+    syncManager.waitForFence();
 
     uint32_t imgIdx;
     VkResult r = vkAcquireNextImageKHR(ctx.device, swapchain.getSwapchain(), UINT64_MAX,
@@ -202,13 +209,13 @@ void PBRApp::drawFrame() {
 
     // Shadow UBO 必须先更新（内部会计算 lightView / lightProj）
     // 注意：shadow UBO 数量 = MAX_FRAMES_IN_FLIGHT，用 frameIdx 索引
-    shadowSystem.updateShadowUBO(ctx.device, frameIdx, model);
+    shadowSystem.updateShadowUBO(frameIdx, model);
 
     // 光源空间矩阵（用于主 pass 的 MVP UBO，以便 shader 做阴影坐标变换）
     Mat4 lightSpaceMatrix = shadowSystem.getLightProj() * shadowSystem.getLightView();
 
     // 更新主 pass UBOs
-    meshManager.updateUniformBuffers(ctx.device, frameIdx,
+    meshManager.updateUniformBuffers(frameIdx,
         model, view, proj, lightSpaceMatrix, camera.getPosition(),
         materialSystem.getPreset(),
         materialSystem.isGlassEnabled(),
@@ -229,7 +236,7 @@ void PBRApp::drawFrame() {
     // 2) 主 pass
     recordCommandBuffer(imgIdx);
 
-    syncManager.resetFence(ctx.device);
+    syncManager.resetFence();
 
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     VkSemaphore wait[] = {syncManager.getImageAvailableSemaphore()};
@@ -380,17 +387,17 @@ void PBRApp::recreateSwapchain() {
     vkDeviceWaitIdle(ctx.device);
 
     // 销毁依赖 swapchain extent 的资源
-    renderPipeline.cleanup(ctx.device);
-    swapchain.recreate(ctx.device, ctx.physicalDevice, ctx.surface, window.getHandle());
+    renderPipeline.cleanup();
+    swapchain.recreate(ctx.surface, window.getHandle());
 
     // 重建依赖 swapchain 的资源
-    renderPipeline.createRenderPass(ctx.device, swapchain.getFormat());
-    renderPipeline.createPipelineLayout(ctx.device,
+    renderPipeline.createRenderPass(swapchain.getFormat());
+    renderPipeline.createPipelineLayout(
         descManager.getMVPLayout(),
         descManager.getMaterialLayout(),
         shadowSystem.getSamplerLayout());
-    renderPipeline.createGraphicsPipeline(ctx.device, swapchain.getExtent(), shaderDir);
-    renderPipeline.createFramebuffers(ctx.device, swapchain.getExtent(),
+    renderPipeline.createGraphicsPipeline(swapchain.getExtent(), shaderDir);
+    renderPipeline.createFramebuffers(swapchain.getExtent(),
         swapchain.getImageViews(), swapchain.getDepthImageView());
 }
 
@@ -401,13 +408,13 @@ void PBRApp::cleanup() {
     vkDeviceWaitIdle(ctx.device);
 
     // 按 reverse-init 顺序清理各 Manager
-    cmdManager.cleanup(ctx.device);
-    shadowSystem.cleanup(ctx.device);
-    descManager.cleanup(ctx.device);
-    syncManager.cleanup(ctx.device);
-    renderPipeline.cleanup(ctx.device);
-    meshManager.cleanup(ctx.device);
-    swapchain.cleanup(ctx.device);
+    cmdManager.cleanup();
+    shadowSystem.cleanup();
+    descManager.cleanup();
+    syncManager.cleanup();
+    renderPipeline.cleanup();
+    meshManager.cleanup();
+    swapchain.cleanup();
 
     // 核心 Vulkan 上下文（device + surface + instance）
     ctx.cleanup();

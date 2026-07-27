@@ -5,12 +5,32 @@
 SyncManager::SyncManager(uint32_t maxFrames)
     : maxFramesInFlight(maxFrames) {}
 
-void SyncManager::create(VkDevice device, uint32_t imageCount) {
+void SyncManager::create(uint32_t imageCount) {
     this->imageCount = imageCount;
-    createSyncObjects(device);
+    // 信号量按 maxFramesInFlight 分配（每次 acquire 用的是当前帧的信号量）
+    imageAvailable.resize(maxFramesInFlight);
+    renderFinished.resize(maxFramesInFlight);
+    inFlightFences.resize(maxFramesInFlight);
+    imagesInFlight.resize(imageCount, VK_NULL_HANDLE);
+
+    VkSemaphoreCreateInfo sci{};
+    sci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    VkFenceCreateInfo fci{};
+    fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
+        if (vkCreateSemaphore(device, &sci, nullptr, &imageAvailable[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &sci, nullptr, &renderFinished[i]) != VK_SUCCESS)
+            throw std::runtime_error("sync object creation failed");
+    }
+    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
+        if (vkCreateFence(device, &fci, nullptr, &inFlightFences[i]) != VK_SUCCESS)
+            throw std::runtime_error("fence creation failed");
+    }
 }
 
-void SyncManager::cleanup(VkDevice device) {
+void SyncManager::cleanup() {
     for (auto s : imageAvailable) {
         if (s) vkDestroySemaphore(device, s, nullptr);
     }
@@ -29,11 +49,11 @@ void SyncManager::cleanup(VkDevice device) {
     imagesInFlight.clear();
 }
 
-void SyncManager::waitForFence(VkDevice device) {
+void SyncManager::waitForFence() {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 }
 
-void SyncManager::resetFence(VkDevice device) {
+void SyncManager::resetFence() {
     vkResetFences(device, 1, &inFlightFences[currentFrame]);
 }
 
@@ -55,29 +75,4 @@ VkFence SyncManager::getInFlightFence() const {
 
 void SyncManager::advanceFrame() {
     currentFrame = (currentFrame + 1) % maxFramesInFlight;
-}
-
-void SyncManager::createSyncObjects(VkDevice device) {
-    // 信号量按 maxFramesInFlight 分配（每次 acquire 用的是当前帧的信号量）
-    imageAvailable.resize(maxFramesInFlight);
-    renderFinished.resize(maxFramesInFlight);
-    // imagesInFlight 按 imageCount 分配（追踪每个 swapchain image 当前正在被哪个 fence 占用）
-    inFlightFences.resize(maxFramesInFlight);
-    imagesInFlight.resize(imageCount, VK_NULL_HANDLE);
-
-    VkSemaphoreCreateInfo sci{};
-    sci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VkFenceCreateInfo fci{};
-    fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
-        if (vkCreateSemaphore(device, &sci, nullptr, &imageAvailable[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &sci, nullptr, &renderFinished[i]) != VK_SUCCESS)
-            throw std::runtime_error("sync object creation failed");
-    }
-    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
-        if (vkCreateFence(device, &fci, nullptr, &inFlightFences[i]) != VK_SUCCESS)
-            throw std::runtime_error("fence creation failed");
-    }
 }

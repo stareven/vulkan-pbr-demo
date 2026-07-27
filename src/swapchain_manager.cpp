@@ -4,23 +4,21 @@
 #include <stdexcept>
 
 SwapchainManager::~SwapchainManager() {
-    // Cleanup should be called explicitly with device
+    // Cleanup should be called explicitly
 }
 
-void SwapchainManager::create(VkDevice device, VkPhysicalDevice physicalDevice,
-                              VkSurfaceKHR surface, GLFWwindow* window) {
-    createSwapchain(device, physicalDevice, surface, window);
-    createImageViews(device);
-    createDepthBuffer(device, physicalDevice);
+void SwapchainManager::create(VkSurfaceKHR surface, GLFWwindow* window) {
+    createSwapchainInternal(surface, window);
+    createImageViews();
+    createDepthBuffer();
 }
 
-void SwapchainManager::recreate(VkDevice device, VkPhysicalDevice physicalDevice,
-                                VkSurfaceKHR surface, GLFWwindow* window) {
-    cleanup(device);
-    create(device, physicalDevice, surface, window);
+void SwapchainManager::recreate(VkSurfaceKHR surface, GLFWwindow* window) {
+    cleanup();
+    create(surface, window);
 }
 
-void SwapchainManager::cleanup(VkDevice device) {
+void SwapchainManager::cleanup() {
     if (depthImageView) {
         vkDestroyImageView(device, depthImageView, nullptr);
         depthImageView = VK_NULL_HANDLE;
@@ -44,8 +42,7 @@ void SwapchainManager::cleanup(VkDevice device) {
     images.clear();
 }
 
-void SwapchainManager::createSwapchain(VkDevice device, VkPhysicalDevice physicalDevice,
-                                       VkSurfaceKHR surface, GLFWwindow* window) {
+void SwapchainManager::createSwapchainInternal(VkSurfaceKHR surface, GLFWwindow* window) {
     VkSurfaceCapabilitiesKHR caps;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &caps);
 
@@ -134,7 +131,7 @@ void SwapchainManager::createSwapchain(VkDevice device, VkPhysicalDevice physica
     extent = ext;
 }
 
-void SwapchainManager::createImageViews(VkDevice device) {
+void SwapchainManager::createImageViews() {
     imageViews.resize(images.size());
     for (size_t i = 0; i < images.size(); ++i) {
         VkImageViewCreateInfo ci{};
@@ -148,7 +145,7 @@ void SwapchainManager::createImageViews(VkDevice device) {
     }
 }
 
-void SwapchainManager::createDepthBuffer(VkDevice device, VkPhysicalDevice physicalDevice) {
+void SwapchainManager::createDepthBuffer() {
     VkImageCreateInfo ii{};
     ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     ii.imageType = VK_IMAGE_TYPE_2D;
