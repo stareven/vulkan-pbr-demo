@@ -1,10 +1,10 @@
 #include "render_pipeline.h"
 #include "vulkan_utils.h"
 #include "types.h"
+using namespace vulkan;
 
 #include <array>
 #include <stdexcept>
-
 RenderPipeline::~RenderPipeline() {
     // Cleanup should be called explicitly
 }

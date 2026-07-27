@@ -34,7 +34,7 @@ private:
     std::string shaderDir;  // 项目根目录(用于查找 shaders)
 
     // 管理器实例
-    Window window{WIDTH, HEIGHT, TITLE};
+    Window window{config::WIDTH, config::HEIGHT, config::TITLE};
     VulkanContext ctx;
     SwapchainManager swapchain;
     RenderPipeline renderPipeline;

@@ -5,26 +5,18 @@
 #include <vulkan/vulkan.h>
 
 #include <optional>
+#include <string>
 #include <vector>
 
 // ============================================================================
-// 文件读取
+// Vulkan 工具函数
 // ============================================================================
+namespace vulkan {
+
 std::vector<char> readFile(const std::string& path);
-
-// ============================================================================
-// Validation Layer
-// ============================================================================
 bool checkLayerSupport(const std::vector<const char*>& validationLayers);
-
-// ============================================================================
-// Shader Module
-// ============================================================================
 VkShaderModule createShaderModule(VkDevice dev, const std::vector<char>& code);
 
-// ============================================================================
-// Queue Families
-// ============================================================================
 struct QueueFamilies {
     std::optional<uint32_t> gfx, present;
     bool complete() const { return gfx && present; }
@@ -32,9 +24,6 @@ struct QueueFamilies {
 
 QueueFamilies findQueues(VkPhysicalDevice pd, VkSurfaceKHR surf);
 
-// ============================================================================
-// Buffer 辅助
-// ============================================================================
 void createBuffer(VkDevice dev, VkPhysicalDevice pd,
                   VkDeviceSize size, VkBufferUsageFlags usage,
                   VkMemoryPropertyFlags memProp,
@@ -42,3 +31,5 @@ void createBuffer(VkDevice dev, VkPhysicalDevice pd,
 
 void copyBuffer(VkDevice dev, VkQueue queue, VkCommandPool pool,
                 VkBuffer src, VkBuffer dst, VkDeviceSize size);
+
+} // namespace vulkan

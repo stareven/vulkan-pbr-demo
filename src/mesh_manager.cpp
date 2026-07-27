@@ -1,11 +1,11 @@
 #include "mesh_manager.h"
 #include "vulkan_utils.h"
 #include "mesh.h"
+using namespace vulkan;
 
 #include <cmath>
 #include <stdexcept>
 #include <cstring>
-
 MeshManager::~MeshManager() {
     // Cleanup should be called explicitly
 }

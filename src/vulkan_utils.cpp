@@ -4,6 +4,8 @@
 #include <fstream>
 #include <stdexcept>
 
+namespace vulkan {
+
 // ============================================================================
 // 文件读取
 // ============================================================================
@@ -135,3 +137,5 @@ void copyBuffer(VkDevice dev, VkQueue queue, VkCommandPool pool,
 
     vkFreeCommandBuffers(dev, pool, 1, &cmd);
 }
+
+} // namespace vulkan

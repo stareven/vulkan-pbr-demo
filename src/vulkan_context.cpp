@@ -1,12 +1,16 @@
 #include "vulkan_context.h"
 #include "vulkan_utils.h"
 #include "types.h"
+
 #include <iostream>
 #include <set>
 #include <stdexcept>
 
+using namespace config;
+using namespace vulkan;
+
 void VulkanContext::initialize(GLFWwindow* window) {
-    if (ENABLE_VALIDATION && !checkLayerSupport(VALIDATION_LAYERS))
+    if (ENABLE_VALIDATION && !checkLayerSupport(validationLayers()))
         throw std::runtime_error("validation layer unavailable");
 
     createInstance();
@@ -48,8 +52,8 @@ void VulkanContext::createInstance() {
     ici.ppEnabledExtensionNames = exts.data();
     ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
     if (ENABLE_VALIDATION) {
-        ici.enabledLayerCount = (uint32_t)VALIDATION_LAYERS.size();
-        ici.ppEnabledLayerNames = VALIDATION_LAYERS.data();
+        ici.enabledLayerCount = (uint32_t)validationLayers().size();
+        ici.ppEnabledLayerNames = validationLayers().data();
     }
     if (vkCreateInstance(&ici, nullptr, &instance) != VK_SUCCESS)
         throw std::runtime_error("instance creation failed");
@@ -76,7 +80,7 @@ void VulkanContext::pickPhysicalDevice() {
         std::vector<VkExtensionProperties> eP(eN);
         vkEnumerateDeviceExtensionProperties(d, nullptr, &eN, eP.data());
 
-        std::set<std::string> req(DEVICE_EXTENSIONS.begin(), DEVICE_EXTENSIONS.end());
+        std::set<std::string> req(deviceExtensions().begin(), deviceExtensions().end());
         for (auto& e : eP) req.erase(e.extensionName);
         if (!req.empty()) continue;
         physicalDevice = d;
@@ -122,8 +126,8 @@ void VulkanContext::createLogicalDevice() {
     dci.queueCreateInfoCount = (uint32_t)qci.size();
     dci.pQueueCreateInfos = qci.data();
     dci.pEnabledFeatures = &feat;
-    dci.enabledExtensionCount = (uint32_t)DEVICE_EXTENSIONS.size();
-    dci.ppEnabledExtensionNames = DEVICE_EXTENSIONS.data();
+    dci.enabledExtensionCount = (uint32_t)deviceExtensions().size();
+    dci.ppEnabledExtensionNames = deviceExtensions().data();
 
     if (vkCreateDevice(physicalDevice, &dci, nullptr, &device) != VK_SUCCESS)
         throw std::runtime_error("logical device creation failed");

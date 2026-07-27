@@ -6,19 +6,28 @@
 #include "math_utils.h"
 
 // ============================================================================
-// 常量
+// 常量（放入命名空间，避免全局污染）
 // ============================================================================
+namespace config {
 constexpr uint32_t WIDTH  = 1280;
 constexpr uint32_t HEIGHT = 720;
 constexpr const char* TITLE = "Vulkan PBR Demo";
 
 constexpr bool ENABLE_VALIDATION = false;
 constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
-const std::vector<const char*> VALIDATION_LAYERS = {"VK_LAYER_KHRONOS_validation"};
-const std::vector<const char*> DEVICE_EXTENSIONS = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    "VK_KHR_portability_subset"
-};
+
+inline const std::vector<const char*>& validationLayers() {
+    static const auto v = std::vector<const char*>{"VK_LAYER_KHRONOS_validation"};
+    return v;
+}
+inline const std::vector<const char*>& deviceExtensions() {
+    static const auto v = std::vector<const char*>{
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        "VK_KHR_portability_subset"
+    };
+    return v;
+}
+} // namespace config
 
 // ============================================================================
 // Vertex / UBO 结构

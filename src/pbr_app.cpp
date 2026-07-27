@@ -11,6 +11,16 @@
 #include <stdexcept>
 #include <thread>
 
+using namespace config;
+#include <filesystem>
+using namespace config;
+#include <iostream>
+using namespace config;
+#include <stdexcept>
+using namespace config;
+#include <thread>
+using namespace config;
+
 // ============================================================================
 // 生命周期
 // ============================================================================

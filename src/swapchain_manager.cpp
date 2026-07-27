@@ -2,6 +2,7 @@
 #include "vulkan_utils.h"
 #include <algorithm>
 #include <stdexcept>
+using namespace vulkan;
 
 SwapchainManager::~SwapchainManager() {
     // Cleanup should be called explicitly

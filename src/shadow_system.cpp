@@ -1,11 +1,11 @@
 #include "shadow_system.h"
 #include "vulkan_utils.h"
+using namespace vulkan;
 
 #include <filesystem>
 #include <stdexcept>
 #include <cstring>
 #include <string>
-
 ShadowSystem::~ShadowSystem() {
     // Cleanup should be called explicitly
 }
