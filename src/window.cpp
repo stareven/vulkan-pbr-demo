@@ -27,8 +27,7 @@ void Window::create() {
     glfwSetWindowAttrib(handle, GLFW_FLOATING, GLFW_FALSE);
 #endif
 
-    glfwSetWindowUserPointer(handle, this);
-    glfwSetFramebufferSizeCallback(handle, framebufferSizeCallback);
+    // 注意：回调由 PBRApp::initWindow() 在调用 create() 后统一注册
     glfwSetInputMode(handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 }
 
@@ -53,9 +52,4 @@ void Window::destroy() {
         glfwDestroyWindow(handle);
         handle = nullptr;
     }
-}
-
-void Window::framebufferSizeCallback(GLFWwindow* window, int, int) {
-    auto self = reinterpret_cast<Window*>(glfwGetWindowUserPointer(window));
-    self->framebufferResized = true;
 }

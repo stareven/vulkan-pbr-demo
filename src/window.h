@@ -31,9 +31,7 @@ public:
     GLFWwindow* getHandle() const { return handle; }
     bool isFramebufferResized() const { return framebufferResized; }
     void resetFramebufferResized() { framebufferResized = false; }
+    void notifyFramebufferResized() { framebufferResized = true; }
 
     void destroy();
-
-private:
-    static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 };

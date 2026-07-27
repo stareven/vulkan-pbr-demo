@@ -36,9 +36,15 @@ void PBRApp::run() {
 void PBRApp::initWindow() {
     window.create();
 
-    // 重新注册回调，使用 PBRApp 自己的相机状态（覆盖 Window 的默认回调）
+    // PBRApp 接管所有回调（覆盖 Window::create() 中的默认注册）。
+    // 因此需要重新设置 user pointer 到 PBRApp*，并注册 framebuffer + 鼠标回调。
     GLFWwindow* h = window.getHandle();
     glfwSetWindowUserPointer(h, this);
+
+    glfwSetFramebufferSizeCallback(h, [](GLFWwindow* w, int, int) {
+        auto s = reinterpret_cast<PBRApp*>(glfwGetWindowUserPointer(w));
+        s->window.notifyFramebufferResized();
+    });
 
     glfwSetCursorPosCallback(h, [](GLFWwindow* w, double x, double y) {
         auto s = reinterpret_cast<PBRApp*>(glfwGetWindowUserPointer(w));
@@ -57,7 +63,6 @@ void PBRApp::initWindow() {
             glfwGetCursorPos(w, &s->lastMX, &s->lastMY);
         }
     });
-    // framebuffer resize 直接用 Window 内部的状态即可（通过 window.isFramebufferResized()）
 }
 
 // ============================================================================
