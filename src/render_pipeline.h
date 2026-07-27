@@ -8,7 +8,7 @@
 #include "types.h"
 
 // ============================================================================
-// 渲染管线 - 渲染通道、管线布局、图形管线、帧缓冲
+// 渲染管线 - 渲染通道、管线布局、图形管线、帧缓冲、主 pass 录制
 // ============================================================================
 class RenderPipeline {
 private:
@@ -33,6 +33,12 @@ public:
                            const std::vector<VkImageView>& swapchainViews,
                            VkImageView depthView);
     void cleanup();
+
+    // 录制主 pass（PBRApp 从各 Manager 取得句柄传进来，避免 RenderPipeline 依赖其他 Manager）
+    void recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExtent2D extent,
+                        const std::vector<VkDescriptorSet>& descSets,
+                        VkBuffer sphereVbo, VkBuffer sphereIbo, uint32_t sphereIndexCount,
+                        VkBuffer planeVbo, VkBuffer planeIbo, uint32_t planeIndexCount) const;
 
     VkRenderPass getRenderPass() const { return renderPass; }
     VkPipeline getPipeline() const { return pipeline; }

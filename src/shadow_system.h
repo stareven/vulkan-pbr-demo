@@ -50,6 +50,10 @@ public:
     void updateShadowUBO(uint32_t imageIndex, const Mat4& model);
     void cleanup();
 
+    // 录制 shadow pass（接收 Vulkan 句柄，不依赖其他 Manager）
+    void recordShadowPass(VkCommandBuffer cmd, uint32_t frameIdx,
+                          VkBuffer sphereVbo, VkBuffer sphereIbo, uint32_t sphereIndexCount) const;
+
     // Getters
     VkRenderPass getRenderPass() const { return renderPass; }
     VkPipeline getPipeline() const { return pipeline; }

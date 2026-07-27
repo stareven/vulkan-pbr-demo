@@ -440,3 +440,46 @@ void ShadowSystem::cleanup() {
     if (dslShadow) vkDestroyDescriptorSetLayout(device, dslShadow, nullptr);
     if (dslShadowSampler) vkDestroyDescriptorSetLayout(device, dslShadowSampler, nullptr);
 }
+
+void ShadowSystem::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIdx,
+                                     VkBuffer sphereVbo, VkBuffer sphereIbo, uint32_t sphereIndexCount) const {
+    vkResetCommandBuffer(cmd, 0);
+
+    VkCommandBufferBeginInfo bi{};
+    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &bi);
+
+    VkClearValue clearValue{};
+    clearValue.depthStencil = {1.0f, 0};
+
+    VkRenderPassBeginInfo rpi{};
+    rpi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpi.renderPass = renderPass;
+    rpi.framebuffer = framebuffer;
+    rpi.renderArea.offset = {0, 0};
+    rpi.renderArea.extent = {MAP_SIZE, MAP_SIZE};
+    rpi.clearValueCount = 1;
+    rpi.pClearValues = &clearValue;
+
+    vkCmdBeginRenderPass(cmd, &rpi, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    VkViewport vp{0, 0, (float)MAP_SIZE, (float)MAP_SIZE, 0.0f, 1.0f};
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    VkRect2D sc{{0, 0}, {MAP_SIZE, MAP_SIZE}};
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+
+    VkDescriptorSet descSets[] = {descSetsShadow[frameIdx]};
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipelineLayout, 0, 1, descSets, 0, nullptr);
+
+    VkBuffer vbos[] = {sphereVbo};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cmd, 0, 1, vbos, offsets);
+    vkCmdBindIndexBuffer(cmd, sphereIbo, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, sphereIndexCount, 1, 0, 0, 0);
+
+    vkCmdEndRenderPass(cmd);
+    vkEndCommandBuffer(cmd);
+}

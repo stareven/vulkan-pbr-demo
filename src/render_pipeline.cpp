@@ -233,3 +233,53 @@ void RenderPipeline::cleanup() {
         renderPass = VK_NULL_HANDLE;
     }
 }
+
+void RenderPipeline::recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExtent2D extent,
+                                    const std::vector<VkDescriptorSet>& descSets,
+                                    VkBuffer sphereVbo, VkBuffer sphereIbo, uint32_t sphereIndexCount,
+                                    VkBuffer planeVbo, VkBuffer planeIbo, uint32_t planeIndexCount) const {
+    vkResetCommandBuffer(cmd, 0);
+
+    VkCommandBufferBeginInfo bi{};
+    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    vkBeginCommandBuffer(cmd, &bi);
+
+    VkClearValue clears[2];
+    clears[0].color = {{0.02f, 0.02f, 0.05f, 1.0f}};
+    clears[1].depthStencil = {1.0f, 0};
+
+    VkRenderPassBeginInfo rpi{};
+    rpi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpi.renderPass = renderPass;
+    rpi.framebuffer = framebuffers[imgIdx];
+    rpi.renderArea.extent = extent;
+    rpi.clearValueCount = 2;
+    rpi.pClearValues = clears;
+    vkCmdBeginRenderPass(cmd, &rpi, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipelineLayout, 0, (uint32_t)descSets.size(), descSets.data(), 0, nullptr);
+
+    VkViewport vp{0, 0, (float)extent.width, (float)extent.height, 0, 1};
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    VkRect2D scissor{{0, 0}, extent};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    // 球体
+    VkBuffer vbos[] = {sphereVbo};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cmd, 0, 1, vbos, offsets);
+    vkCmdBindIndexBuffer(cmd, sphereIbo, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, sphereIndexCount, 1, 0, 0, 0);
+
+    // 地面
+    VkBuffer planeVbos[] = {planeVbo};
+    vkCmdBindVertexBuffers(cmd, 0, 1, planeVbos, offsets);
+    vkCmdBindIndexBuffer(cmd, planeIbo, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, planeIndexCount, 1, 0, 0, 0);
+
+    vkCmdEndRenderPass(cmd);
+    vkEndCommandBuffer(cmd);
+}

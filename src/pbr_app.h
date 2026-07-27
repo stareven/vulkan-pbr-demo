@@ -62,8 +62,6 @@ private:
     void mainLoop();
     void handleInput(float dt);
     void drawFrame();
-    void recordShadowCommandBuffer();
-    void recordCommandBuffer(uint32_t imgIdx);
     void recreateSwapchain();
 
     // ------------------------------------------------------------------

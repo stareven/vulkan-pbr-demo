@@ -224,17 +224,30 @@ void PBRApp::drawFrame() {
     // descriptor set 已经在 init 时绑定到每帧 UBO，无需每帧更新
 
     // 1) Shadow pass — 独立提交并等待完成（主 pass 需要采样 shadow map）
-    recordShadowCommandBuffer();
+    VkCommandBuffer shadowCmd = cmdManager.getShadowCommandBuffer();
+    uint32_t sFrameIdx = syncManager.getCurrentFrame();
+    shadowSystem.recordShadowPass(shadowCmd, sFrameIdx,
+        meshManager.getSphereVBO(), meshManager.getSphereIBO(), meshManager.getSphereIndexCount());
     VkSubmitInfo shadowSubmit{};
     shadowSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     shadowSubmit.commandBufferCount = 1;
-    VkCommandBuffer shadowCmd = cmdManager.getShadowCommandBuffer();
     shadowSubmit.pCommandBuffers = &shadowCmd;
     vkQueueSubmit(ctx.getGraphicsQueue(), 1, &shadowSubmit, VK_NULL_HANDLE);
     vkQueueWaitIdle(ctx.getGraphicsQueue());
 
     // 2) 主 pass
-    recordCommandBuffer(imgIdx);
+    VkCommandBuffer mainCmd = cmdManager.getBuffer(frameIdx);
+    {
+        VkDescriptorSet descSets[] = {
+            descManager.getMVPSet(frameIdx),
+            descManager.getMaterialSet(frameIdx),
+            shadowSystem.getSamplerSet(imgIdx),
+        };
+        std::vector<VkDescriptorSet> dsVec(descSets, descSets + 3);
+        renderPipeline.recordMainPass(mainCmd, imgIdx, swapchain.getExtent(), dsVec,
+            meshManager.getSphereVBO(), meshManager.getSphereIBO(), meshManager.getSphereIndexCount(),
+            meshManager.getPlaneVBO(), meshManager.getPlaneIBO(), meshManager.getPlaneIndexCount());
+    }
 
     syncManager.resetFence();
 
@@ -248,7 +261,6 @@ void PBRApp::drawFrame() {
     si.pWaitSemaphores = wait;
     si.pWaitDstStageMask = waitStages;
     si.commandBufferCount = 1;
-    VkCommandBuffer mainCmd = cmdManager.getBuffer(frameIdx);
     si.pCommandBuffers = &mainCmd;
     si.signalSemaphoreCount = 1;
     si.pSignalSemaphores = sig;
@@ -272,112 +284,6 @@ void PBRApp::drawFrame() {
     }
 
     syncManager.advanceFrame();
-}
-
-// ============================================================================
-// Shadow command buffer
-// ============================================================================
-void PBRApp::recordShadowCommandBuffer() {
-    VkCommandBuffer cmd = cmdManager.getShadowCommandBuffer();
-    vkResetCommandBuffer(cmd, 0);
-
-    VkCommandBufferBeginInfo bi{};
-    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &bi);
-
-    VkClearValue clearValue{};
-    clearValue.depthStencil = {1.0f, 0};
-
-    VkRenderPassBeginInfo rpi{};
-    rpi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    rpi.renderPass = shadowSystem.getRenderPass();
-    rpi.framebuffer = shadowSystem.getFramebuffer();
-    rpi.renderArea.offset = {0, 0};
-    rpi.renderArea.extent = {2048, 2048};
-    rpi.clearValueCount = 1;
-    rpi.pClearValues = &clearValue;
-
-    vkCmdBeginRenderPass(cmd, &rpi, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowSystem.getPipeline());
-
-    VkViewport vp{0, 0, 2048.0f, 2048.0f, 0.0f, 1.0f};
-    vkCmdSetViewport(cmd, 0, 1, &vp);
-    VkRect2D sc{{0, 0}, {2048, 2048}};
-    vkCmdSetScissor(cmd, 0, 1, &sc);
-
-    uint32_t frameIdx = syncManager.getCurrentFrame();
-    VkDescriptorSet descSets[] = {shadowSystem.getShadowSet(frameIdx)};
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        shadowSystem.getPipelineLayout(), 0, 1, descSets, 0, nullptr);
-
-    VkBuffer vbos[] = {meshManager.getSphereVBO()};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(cmd, 0, 1, vbos, offsets);
-    vkCmdBindIndexBuffer(cmd, meshManager.getSphereIBO(), 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, meshManager.getSphereIndexCount(), 1, 0, 0, 0);
-
-    vkCmdEndRenderPass(cmd);
-    vkEndCommandBuffer(cmd);
-}
-
-// ============================================================================
-// Main command buffer
-// ============================================================================
-void PBRApp::recordCommandBuffer(uint32_t imgIdx) {
-    uint32_t frameIdx = syncManager.getCurrentFrame();
-    VkCommandBuffer cmd = cmdManager.getBuffer(frameIdx);
-    vkResetCommandBuffer(cmd, 0);
-
-    VkCommandBufferBeginInfo bi{};
-    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    vkBeginCommandBuffer(cmd, &bi);
-
-    VkClearValue clears[2];
-    clears[0].color = {{0.02f, 0.02f, 0.05f, 1.0f}};
-    clears[1].depthStencil = {1.0f, 0};
-
-    VkRenderPassBeginInfo rpi{};
-    rpi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    rpi.renderPass = renderPipeline.getRenderPass();
-    rpi.framebuffer = renderPipeline.getFramebuffers()[imgIdx];
-    rpi.renderArea.extent = swapchain.getExtent();
-    rpi.clearValueCount = 2;
-    rpi.pClearValues = clears;
-    vkCmdBeginRenderPass(cmd, &rpi, VK_SUBPASS_CONTENTS_INLINE);
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipeline.getPipeline());
-
-    // set 0 = MVP, set 1 = Material, set 2 = Shadow Sampler
-    VkDescriptorSet descSets[] = {
-        descManager.getMVPSet(frameIdx),
-        descManager.getMaterialSet(frameIdx),
-        shadowSystem.getSamplerSet(imgIdx),
-    };
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        renderPipeline.getPipelineLayout(), 0, 3, descSets, 0, nullptr);
-
-    VkExtent2D ext = swapchain.getExtent();
-    VkViewport vp{0, 0, (float)ext.width, (float)ext.height, 0, 1};
-    vkCmdSetViewport(cmd, 0, 1, &vp);
-    VkRect2D scissor{{0, 0}, ext};
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    // 球体
-    VkBuffer vbos[] = {meshManager.getSphereVBO()};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(cmd, 0, 1, vbos, offsets);
-    vkCmdBindIndexBuffer(cmd, meshManager.getSphereIBO(), 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, meshManager.getSphereIndexCount(), 1, 0, 0, 0);
-
-    // 地面（接收阴影，复用同一材质）
-    VkBuffer planeVbos[] = {meshManager.getPlaneVBO()};
-    vkCmdBindVertexBuffers(cmd, 0, 1, planeVbos, offsets);
-    vkCmdBindIndexBuffer(cmd, meshManager.getPlaneIBO(), 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, meshManager.getPlaneIndexCount(), 1, 0, 0, 0);
-
-    vkCmdEndRenderPass(cmd);
-    vkEndCommandBuffer(cmd);
 }
 
 // ============================================================================
