@@ -259,6 +259,7 @@ void RenderPipeline::cleanup() {
 
 void RenderPipeline::recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExtent2D extent,
                                     const std::vector<VkDescriptorSet>& descSets,
+                                    VkDescriptorSet matGroundSet,
                                     VkBuffer sphereVbo, VkBuffer sphereIbo, uint32_t sphereIndexCount,
                                     VkBuffer planeVbo, VkBuffer planeIbo, uint32_t planeIndexCount,
                                     bool emissiveEnabled, bool glassEnabled) const {
@@ -289,7 +290,9 @@ void RenderPipeline::recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExte
     VkRect2D scissor{{0, 0}, extent};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    // 先画地面（不透明管线，深度写入开，无自发光）
+    // 先画地面（切换 set 1 为地面材质，不透明管线，深度写入开，无自发光）
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipelineLayout, 1, 1, &matGroundSet, 0, nullptr);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineOpaque);
     float emissiveTarget = 0.0f;
     vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
@@ -300,7 +303,9 @@ void RenderPipeline::recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExte
     vkCmdBindIndexBuffer(cmd, planeIbo, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cmd, planeIndexCount, 1, 0, 0, 0);
 
-    // 再画球体（玻璃时用半透明管线关闭深度写入，否则地面片段会被深度测试丢弃）
+    // 再画球体（切回球体材质，玻璃时用半透明管线关闭深度写入）
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipelineLayout, 1, 1, &descSets[1], 0, nullptr);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       glassEnabled ? pipelineTransparent : pipelineOpaque);
     emissiveTarget = emissiveEnabled ? 1.0f : 0.0f;

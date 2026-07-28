@@ -31,8 +31,10 @@ private:
     // Uniform 缓冲
     std::vector<VkBuffer> uboMVPBuf;
     std::vector<VkDeviceMemory> uboMVPMem;
-    std::vector<VkBuffer> uboMatBuf;
+    std::vector<VkBuffer> uboMatBuf;       // 球体材质
     std::vector<VkDeviceMemory> uboMatMem;
+    std::vector<VkBuffer> uboMatGroundBuf; // 地面材质（固定，不受 M/G/F 影响）
+    std::vector<VkDeviceMemory> uboMatGroundMem;
 
 public:
     MeshManager() = default;
@@ -56,4 +58,5 @@ public:
 
     VkBuffer getMVPBuffer(uint32_t index) const { return uboMVPBuf[index]; }
     VkBuffer getMaterialBuffer(uint32_t index) const { return uboMatBuf[index]; }
+    VkBuffer getMaterialGroundBuffer(uint32_t index) const { return uboMatGroundBuf[index]; }
 };

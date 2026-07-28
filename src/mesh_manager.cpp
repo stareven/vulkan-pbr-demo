@@ -108,6 +108,8 @@ void MeshManager::createUniformBuffers(size_t imageCount) {
     uboMVPMem.resize(imageCount);
     uboMatBuf.resize(imageCount);
     uboMatMem.resize(imageCount);
+    uboMatGroundBuf.resize(imageCount);
+    uboMatGroundMem.resize(imageCount);
 
     for (size_t i = 0; i < imageCount; ++i) {
         createBuffer(device, physicalDevice, sizeof(UBO_MVP),
@@ -118,6 +120,34 @@ void MeshManager::createUniformBuffers(size_t imageCount) {
                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                     uboMatBuf[i], uboMatMem[i]);
+        createBuffer(device, physicalDevice, sizeof(UBO_Material),
+                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    uboMatGroundBuf[i], uboMatGroundMem[i]);
+    }
+
+    // 地面材质：固定中性混凝土，不受 M/G/F 影响
+    for (size_t i = 0; i < imageCount; ++i) {
+        UBO_Material ground{};
+        ground.albedo = {0.45f, 0.43f, 0.40f};
+        ground.metallic = 0.0f;
+        ground.roughness = 0.85f;
+        ground.ao = 1.0f;
+        ground.ior = 1.5f;
+        ground.opacity = 1.0f;
+        ground.cameraPos = {0, 3, 8}; // 占位，每帧会被 MVP UBO 覆盖
+        ground.ambientLight = {0.03f, 0.03f, 0.03f};
+        ground.lights[0] = {{10, 10, 10}, 0.0f, {300, 300, 300}, 1.0f};
+        ground.lights[1] = {{-10, 10, 10}, 0.0f, {300, 100, 100}, 1.0f};
+        ground.lights[2] = {{10, -10, -10}, 0.0f, {100, 300, 100}, 1.0f};
+        ground.lights[3] = {{-10, -10, -10}, 0.0f, {100, 100, 300}, 1.0f};
+        ground.emissive = {0, 0, 0};
+        ground.emissiveStrength = 0.0f;
+
+        void* data;
+        vkMapMemory(device, uboMatGroundMem[i], 0, sizeof(ground), 0, &data);
+        memcpy(data, &ground, sizeof(ground));
+        vkUnmapMemory(device, uboMatGroundMem[i]);
     }
 }
 
@@ -206,6 +236,12 @@ void MeshManager::cleanup() {
         if (buf) vkDestroyBuffer(device, buf, nullptr);
     }
     for (auto mem : uboMatMem) {
+        if (mem) vkFreeMemory(device, mem, nullptr);
+    }
+    for (auto buf : uboMatGroundBuf) {
+        if (buf) vkDestroyBuffer(device, buf, nullptr);
+    }
+    for (auto mem : uboMatGroundMem) {
         if (mem) vkFreeMemory(device, mem, nullptr);
     }
 

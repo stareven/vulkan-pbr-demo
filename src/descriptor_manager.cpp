@@ -28,12 +28,16 @@ void DescriptorManager::createLayouts() {
     binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     if (vkCreateDescriptorSetLayout(device, &li, nullptr, &dslMat) != VK_SUCCESS)
         throw std::runtime_error("Material descriptor layout creation failed");
+
+    // 地面材质布局（结构同球体，独立 set）
+    if (vkCreateDescriptorSetLayout(device, &li, nullptr, &dslMatGround) != VK_SUCCESS)
+        throw std::runtime_error("Ground material descriptor layout creation failed");
 }
 
 void DescriptorManager::createPool(uint32_t imageCount) {
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = imageCount * 2; // MVP + Material
+    poolSizes[0].descriptorCount = imageCount * 3; // MVP + Material + MaterialGround
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = imageCount;
 
@@ -41,7 +45,7 @@ void DescriptorManager::createPool(uint32_t imageCount) {
     pi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     pi.poolSizeCount = (uint32_t)poolSizes.size();
     pi.pPoolSizes = poolSizes.data();
-    pi.maxSets = imageCount * 3;
+    pi.maxSets = imageCount * 4; // MVP + Mat + MatGround + shadow
 
     if (vkCreateDescriptorPool(device, &pi, nullptr, &pool) != VK_SUCCESS)
         throw std::runtime_error("descriptor pool creation failed");
@@ -50,9 +54,11 @@ void DescriptorManager::createPool(uint32_t imageCount) {
 void DescriptorManager::allocateSets(uint32_t imageCount) {
     setsMVP.resize(imageCount);
     setsMat.resize(imageCount);
+    setsMatGround.resize(imageCount);
 
     std::vector<VkDescriptorSetLayout> mvpLayouts(imageCount, dslMVP);
     std::vector<VkDescriptorSetLayout> matLayouts(imageCount, dslMat);
+    std::vector<VkDescriptorSetLayout> matGroundLayouts(imageCount, dslMatGround);
 
     VkDescriptorSetAllocateInfo ai{};
     ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -66,6 +72,10 @@ void DescriptorManager::allocateSets(uint32_t imageCount) {
     ai.pSetLayouts = matLayouts.data();
     if (vkAllocateDescriptorSets(device, &ai, setsMat.data()) != VK_SUCCESS)
         throw std::runtime_error("Material descriptor set allocation failed");
+
+    ai.pSetLayouts = matGroundLayouts.data();
+    if (vkAllocateDescriptorSets(device, &ai, setsMatGround.data()) != VK_SUCCESS)
+        throw std::runtime_error("Ground material descriptor set allocation failed");
 }
 
 void DescriptorManager::updateSets(uint32_t imageIndex, VkBuffer mvpBuffer, VkBuffer matBuffer) {
@@ -99,10 +109,31 @@ void DescriptorManager::updateSets(uint32_t imageIndex, VkBuffer mvpBuffer, VkBu
     vkUpdateDescriptorSets(device, (uint32_t)writes.size(), writes.data(), 0, nullptr);
 }
 
+void DescriptorManager::updateGroundSets(uint32_t imageIndex, VkBuffer matGroundBuffer) {
+    VkDescriptorBufferInfo matInfo{};
+    matInfo.buffer = matGroundBuffer;
+    matInfo.offset = 0;
+    matInfo.range = sizeof(UBO_Material);
+
+    VkWriteDescriptorSet matWrite{};
+    matWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    matWrite.dstSet = setsMatGround[imageIndex];
+    matWrite.dstBinding = 0;
+    matWrite.descriptorCount = 1;
+    matWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    matWrite.pBufferInfo = &matInfo;
+
+    vkUpdateDescriptorSets(device, 1, &matWrite, 0, nullptr);
+}
+
 void DescriptorManager::cleanup() {
     if (pool) {
         vkDestroyDescriptorPool(device, pool, nullptr);
         pool = VK_NULL_HANDLE;
+    }
+    if (dslMatGround) {
+        vkDestroyDescriptorSetLayout(device, dslMatGround, nullptr);
+        dslMatGround = VK_NULL_HANDLE;
     }
     if (dslMat) {
         vkDestroyDescriptorSetLayout(device, dslMat, nullptr);
@@ -114,4 +145,5 @@ void DescriptorManager::cleanup() {
     }
     setsMVP.clear();
     setsMat.clear();
+    setsMatGround.clear();
 }

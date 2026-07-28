@@ -38,6 +38,7 @@ public:
     // 录制主 pass（PBRApp 从各 Manager 取得句柄传进来，避免 RenderPipeline 依赖其他 Manager）
     void recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExtent2D extent,
                         const std::vector<VkDescriptorSet>& descSets,
+                        VkDescriptorSet matGroundSet,
                         VkBuffer sphereVbo, VkBuffer sphereIbo, uint32_t sphereIndexCount,
                         VkBuffer planeVbo, VkBuffer planeIbo, uint32_t planeIndexCount,
                         bool emissiveEnabled, bool glassEnabled) const;

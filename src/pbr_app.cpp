@@ -122,6 +122,8 @@ void PBRApp::initVulkan() {
         descManager.updateSets(i,
             meshManager.getMVPBuffer(i),
             meshManager.getMaterialBuffer(i));
+        descManager.updateGroundSets(i,
+            meshManager.getMaterialGroundBuffer(i));
     }
 
     // 11. 命令缓冲
@@ -247,6 +249,7 @@ void PBRApp::drawFrame() {
         };
         std::vector<VkDescriptorSet> dsVec(descSets, descSets + 3);
         renderPipeline.recordMainPass(mainCmd, imgIdx, swapchain.getExtent(), dsVec,
+            descManager.getMaterialGroundSet(frameIdx),
             meshManager.getSphereVBO(), meshManager.getSphereIBO(), meshManager.getSphereIndexCount(),
             meshManager.getPlaneVBO(), meshManager.getPlaneIBO(), meshManager.getPlaneIndexCount(),
             materialSystem.isEmissiveEnabled(), materialSystem.isGlassEnabled());
