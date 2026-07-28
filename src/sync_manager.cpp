@@ -40,9 +40,8 @@ void SyncManager::cleanup() {
     for (auto f : inFlightFences) {
         if (f) vkDestroyFence(device, f, nullptr);
     }
-    for (auto f : imagesInFlight) {
-        if (f) vkDestroyFence(device, f, nullptr);
-    }
+    // imagesInFlight 仅持有 inFlightFences 中 fence 的弱引用（别名），
+    // 上面已经统一销毁，这里不能再释放一次，否则会 double-free。
     imageAvailable.clear();
     renderFinished.clear();
     inFlightFences.clear();
