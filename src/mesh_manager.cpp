@@ -169,9 +169,10 @@ void MeshManager::updateUniformBuffers(uint32_t imageIndex, const Mat4& model, c
         ubo.cameraPos = cameraPos;
         ubo.ambientLight = {0.03f, 0.03f, 0.03f};
 
-        if ((materialPreset % 7) == 6 && glassEnabled) {
+        if (glassEnabled) {
             ubo.ior = 1.52f;
-            ubo.opacity = 0.3f;
+            ubo.opacity = 0.2f;
+            ubo.roughness = 0.02f;
         }
 
         ubo.lights[0] = {{10, 10, 10}, 0.0f, {300, 300, 300}, 1.0f};
@@ -180,8 +181,8 @@ void MeshManager::updateUniformBuffers(uint32_t imageIndex, const Mat4& model, c
         ubo.lights[3] = {{-10, -10, -10}, 0.0f, {100, 100, 300}, 1.0f};
 
         if (emissiveEnabled) {
-            ubo.emissive = {1.0f, 0.5f, 0.1f};
-            ubo.emissiveStrength = 2.0f;
+            ubo.emissive = {2.0f, 0.3f, 0.05f};
+            ubo.emissiveStrength = 5.0f;
         } else {
             ubo.emissive = {0.0f, 0.0f, 0.0f};
             ubo.emissiveStrength = 0.0f;

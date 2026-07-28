@@ -248,7 +248,8 @@ void PBRApp::drawFrame() {
         std::vector<VkDescriptorSet> dsVec(descSets, descSets + 3);
         renderPipeline.recordMainPass(mainCmd, imgIdx, swapchain.getExtent(), dsVec,
             meshManager.getSphereVBO(), meshManager.getSphereIBO(), meshManager.getSphereIndexCount(),
-            meshManager.getPlaneVBO(), meshManager.getPlaneIBO(), meshManager.getPlaneIndexCount());
+            meshManager.getPlaneVBO(), meshManager.getPlaneIBO(), meshManager.getPlaneIndexCount(),
+            materialSystem.isEmissiveEnabled(), materialSystem.isGlassEnabled());
     }
 
     syncManager.resetFence();

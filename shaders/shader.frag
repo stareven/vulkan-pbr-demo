@@ -6,6 +6,7 @@ layout(location = 0) in vec3 fragPosition;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec2 fragUV;
 layout(location = 3) in vec4 fragPosLightSpace;
+layout(location = 4) flat in float fragEmissiveTarget;
 
 layout(location = 0) out vec4 outColor;
 
@@ -135,10 +136,10 @@ void main() {
     vec3 ambient = (kD * mat.albedo) * mat.ambientLight * mat.ao;
     vec3 color = ambient + Lo;
 
-    color += mat.emissive * mat.emissiveStrength;
+    color += mat.emissive * mat.emissiveStrength * fragEmissiveTarget;
 
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0 / 2.2));
 
-    outColor = vec4(color, 1.0);
+    outColor = vec4(color, mat.opacity);
 }

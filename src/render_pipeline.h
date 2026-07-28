@@ -15,7 +15,8 @@ private:
     VkDevice device = VK_NULL_HANDLE;
     VkRenderPass renderPass = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipeline pipelineOpaque = VK_NULL_HANDLE;    // 不透明物体（深度写入开）
+    VkPipeline pipelineTransparent = VK_NULL_HANDLE; // 半透明物体（深度写入关）
     std::vector<VkFramebuffer> framebuffers;
 
 public:
@@ -38,10 +39,11 @@ public:
     void recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExtent2D extent,
                         const std::vector<VkDescriptorSet>& descSets,
                         VkBuffer sphereVbo, VkBuffer sphereIbo, uint32_t sphereIndexCount,
-                        VkBuffer planeVbo, VkBuffer planeIbo, uint32_t planeIndexCount) const;
+                        VkBuffer planeVbo, VkBuffer planeIbo, uint32_t planeIndexCount,
+                        bool emissiveEnabled, bool glassEnabled) const;
 
     VkRenderPass getRenderPass() const { return renderPass; }
-    VkPipeline getPipeline() const { return pipeline; }
+    VkPipeline getPipeline() const { return pipelineOpaque; }
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout; }
     const std::vector<VkFramebuffer>& getFramebuffers() const { return framebuffers; }
 };

@@ -67,10 +67,16 @@ void RenderPipeline::createPipelineLayout(VkDescriptorSetLayout mvpLayout,
                                          VkDescriptorSetLayout materialLayout,
                                          VkDescriptorSetLayout shadowSamplerLayout) {
     VkDescriptorSetLayout layouts[] = {mvpLayout, materialLayout, shadowSamplerLayout};
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(float);  // emissiveTarget
     VkPipelineLayoutCreateInfo pli{};
     pli.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pli.setLayoutCount = 3;
     pli.pSetLayouts = layouts;
+    pli.pushConstantRangeCount = 1;
+    pli.pPushConstantRanges = &pushRange;
     if (vkCreatePipelineLayout(device, &pli, nullptr, &pipelineLayout) != VK_SUCCESS)
         throw std::runtime_error("pipeline layout creation failed");
 }
@@ -189,8 +195,21 @@ void RenderPipeline::createGraphicsPipeline(VkExtent2D extent, const std::string
     gpi.renderPass = renderPass;
     gpi.subpass = 0;
 
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gpi, nullptr, &pipeline) != VK_SUCCESS)
-        throw std::runtime_error("graphics pipeline creation failed");
+    // 创建两条管线：不透明（深度写入开）和半透明（深度写入关）
+    {
+        VkPipelineDepthStencilStateCreateInfo dsOpaque = ds;
+        dsOpaque.depthWriteEnable = VK_TRUE;
+        gpi.pDepthStencilState = &dsOpaque;
+        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gpi, nullptr, &pipelineOpaque) != VK_SUCCESS)
+            throw std::runtime_error("opaque pipeline creation failed");
+    }
+    {
+        VkPipelineDepthStencilStateCreateInfo dsTrans = ds;
+        dsTrans.depthWriteEnable = VK_FALSE;
+        gpi.pDepthStencilState = &dsTrans;
+        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gpi, nullptr, &pipelineTransparent) != VK_SUCCESS)
+            throw std::runtime_error("transparent pipeline creation failed");
+    }
 
     vkDestroyShaderModule(device, vs, nullptr);
     vkDestroyShaderModule(device, fs, nullptr);
@@ -220,9 +239,13 @@ void RenderPipeline::cleanup() {
         if (fb) vkDestroyFramebuffer(device, fb, nullptr);
     }
     framebuffers.clear();
-    if (pipeline) {
-        vkDestroyPipeline(device, pipeline, nullptr);
-        pipeline = VK_NULL_HANDLE;
+    if (pipelineOpaque) {
+        vkDestroyPipeline(device, pipelineOpaque, nullptr);
+        pipelineOpaque = VK_NULL_HANDLE;
+    }
+    if (pipelineTransparent) {
+        vkDestroyPipeline(device, pipelineTransparent, nullptr);
+        pipelineTransparent = VK_NULL_HANDLE;
     }
     if (pipelineLayout) {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -237,7 +260,8 @@ void RenderPipeline::cleanup() {
 void RenderPipeline::recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExtent2D extent,
                                     const std::vector<VkDescriptorSet>& descSets,
                                     VkBuffer sphereVbo, VkBuffer sphereIbo, uint32_t sphereIndexCount,
-                                    VkBuffer planeVbo, VkBuffer planeIbo, uint32_t planeIndexCount) const {
+                                    VkBuffer planeVbo, VkBuffer planeIbo, uint32_t planeIndexCount,
+                                    bool emissiveEnabled, bool glassEnabled) const {
     vkResetCommandBuffer(cmd, 0);
 
     VkCommandBufferBeginInfo bi{};
@@ -257,8 +281,6 @@ void RenderPipeline::recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExte
     rpi.pClearValues = clears;
     vkCmdBeginRenderPass(cmd, &rpi, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipelineLayout, 0, (uint32_t)descSets.size(), descSets.data(), 0, nullptr);
 
@@ -267,18 +289,27 @@ void RenderPipeline::recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExte
     VkRect2D scissor{{0, 0}, extent};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    // 球体
-    VkBuffer vbos[] = {sphereVbo};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(cmd, 0, 1, vbos, offsets);
-    vkCmdBindIndexBuffer(cmd, sphereIbo, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, sphereIndexCount, 1, 0, 0, 0);
-
-    // 地面
+    // 先画地面（不透明管线，深度写入开，无自发光）
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineOpaque);
+    float emissiveTarget = 0.0f;
+    vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(float), &emissiveTarget);
     VkBuffer planeVbos[] = {planeVbo};
+    VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(cmd, 0, 1, planeVbos, offsets);
     vkCmdBindIndexBuffer(cmd, planeIbo, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cmd, planeIndexCount, 1, 0, 0, 0);
+
+    // 再画球体（玻璃时用半透明管线关闭深度写入，否则地面片段会被深度测试丢弃）
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      glassEnabled ? pipelineTransparent : pipelineOpaque);
+    emissiveTarget = emissiveEnabled ? 1.0f : 0.0f;
+    vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(float), &emissiveTarget);
+    VkBuffer vbos[] = {sphereVbo};
+    vkCmdBindVertexBuffers(cmd, 0, 1, vbos, offsets);
+    vkCmdBindIndexBuffer(cmd, sphereIbo, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, sphereIndexCount, 1, 0, 0, 0);
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
