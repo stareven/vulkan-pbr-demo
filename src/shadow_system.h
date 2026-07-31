@@ -7,7 +7,10 @@
 #include <string>
 #include <vector>
 #include "types.h"
-#include "math_utils.h"
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 // ============================================================================
 // 阴影系统 - 基于阴影贴图（Shadow Map）的实时阴影渲染
