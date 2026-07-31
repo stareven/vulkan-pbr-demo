@@ -192,6 +192,16 @@ void PBRApp::initVulkan() {
     // --------------------------------------------------------------------------
     cmdManager.allocateBuffers(MAX_FRAMES_IN_FLIGHT);  // 为每帧分配主渲染命令缓冲
     cmdManager.allocateShadowCommandBuffer();            // 分配一个共享的阴影渲染命令缓冲
+
+    // --------------------------------------------------------------------------
+    // 第12步：初始化 ImGui
+    // --------------------------------------------------------------------------
+    // 初始化 ImGui 管理器，传入 Vulkan 上下文、窗口、渲染通道和图像数量
+    // ImGui 会在所有 3D 渲染完成后绘制统计界面
+    imguiManager.initialize(ctx, window, renderPipeline.getRenderPass(), swapchain.getImageCount());
+
+    // 初始化帧时间计时器
+    lastFrameTime = std::chrono::high_resolution_clock::now();
 }
 
 // ============================================================================
@@ -247,6 +257,17 @@ void PBRApp::handleInput(float dt) {
         std::cout << "Emissive: " << (materialSystem.isEmissiveEnabled() ? "ON" : "OFF") << "\n";  // 输出当前状态
     }
     eLast = eNow;  // 更新状态记录
+
+    // ==========================================================================
+    // ImGui 窗口切换 (F1键)
+    // ==========================================================================
+    static bool f1Last = false;  // 静态变量：记录上一帧 F1 键的状态
+    bool f1Now = glfwGetKey(h, GLFW_KEY_F1) == GLFW_PRESS;  // 当前帧 F1 键是否按下
+    if (f1Now && !f1Last) {  // 仅在按下瞬间触发一次
+        window.toggleImGui();  // 切换 ImGui 窗口显示/隐藏
+        imguiManager.setVisible(window.shouldShowImGui());
+    }
+    f1Last = f1Now;  // 更新状态记录
 }
 
 // ============================================================================
@@ -270,6 +291,20 @@ void PBRApp::mainLoop() {
 
 // 单帧渲染核心逻辑：同步 → 更新 UBO → 阴影通道 → 主渲染通道 → 呈现
 void PBRApp::drawFrame() {
+    // --------------------------------------------------------------------------
+    // 第0步：计算帧时间
+    // --------------------------------------------------------------------------
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    auto frameTime = std::chrono::duration<float, std::milli>(currentTime - lastFrameTime).count();
+    lastFrameTime = currentTime;
+
+    // 更新帧率统计
+    renderStats.frameTime = frameTime;
+    renderStats.fps = 1000.0f / frameTime;
+
+    // 重置每帧统计（Draw Calls 和 Triangles）
+    renderStats.resetPerFrame();
+
     // --------------------------------------------------------------------------
     // 第1步：等待围栏，确保上一帧完成
     // --------------------------------------------------------------------------
@@ -336,6 +371,14 @@ void PBRApp::drawFrame() {
     // descriptor set 已经在 init 时绑定到每帧 UBO，无需每帧更新
 
     // --------------------------------------------------------------------------
+    // 第8.5步：ImGui 帧开始
+    // --------------------------------------------------------------------------
+    // 开始 ImGui 新帧，准备收集 UI 绘制命令
+    imguiManager.beginFrame();
+    imguiManager.showStatsWindow(renderStats);  // 显示渲染统计窗口
+    imguiManager.endFrame();                    // 结束帧，生成绘制数据
+
+    // --------------------------------------------------------------------------
     // 第9步：阴影通道渲染
     // --------------------------------------------------------------------------
     // 1) Shadow pass — 独立提交并等待完成（主 pass 需要采样 shadow map）
@@ -367,13 +410,29 @@ void PBRApp::drawFrame() {
             shadowSystem.getSamplerSet(imgIdx),        // set 2: 阴影采样器描述符集（包含阴影贴图）
         };
         std::vector<VkDescriptorSet> dsVec(descSets, descSets + 3);  // 转为 vector 传递给渲染管线
+
+        // 更新渲染统计（Draw Calls 和 Triangles）
+        // 地面：1 个 draw call，planeIndexCount / 3 个三角形
+        renderStats.drawCalls++;
+        renderStats.triangles += meshManager.getPlaneIndexCount() / 3;
+        // 球体：1 个 draw call，sphereIndexCount / 3 个三角形
+        renderStats.drawCalls++;
+        renderStats.triangles += meshManager.getSphereIndexCount() / 3;
+
+        // 更新资源统计（这些值在初始化后不会变化，可以硬编码或动态查询）
+        renderStats.descriptorSets = 3 * MAX_FRAMES_IN_FLIGHT + 1;  // MVP + Material + Shadow per frame + ground
+        renderStats.uniformBuffers = 3 * MAX_FRAMES_IN_FLIGHT + 1;  // MVP + Material per frame + ground + shadow
+        renderStats.textures = 1;  // 阴影贴图
+
         // 记录主渲染命令：绘制球体和平面
+        // 传入 imguiManager，让它可以在渲染通道结束前绘制 ImGui 界面
         renderPipeline.recordMainPass(mainCmd, imgIdx, swapchain.getExtent(), dsVec,
             descManager.getMaterialGroundSet(frameIdx),  // 地面材质描述符集（独立于球体材质）
             meshManager.getSphereVBO(), meshManager.getSphereIBO(), meshManager.getSphereIndexCount(),  // 球体数据
             meshManager.getPlaneVBO(), meshManager.getPlaneIBO(), meshManager.getPlaneIndexCount(),     // 平面数据
             materialSystem.isEmissiveEnabled(),  // 自发光开关
-            materialSystem.isGlassEnabled());    // 玻璃效果开关
+            materialSystem.isGlassEnabled(),     // 玻璃效果开关
+            &imguiManager);                      // ImGui 管理器（可选）
     }
 
     // --------------------------------------------------------------------------
@@ -462,6 +521,9 @@ void PBRApp::recreateSwapchain() {
 // 清理所有 Vulkan 资源和窗口资源（按初始化的逆序销毁）
 void PBRApp::cleanup() {
     vkDeviceWaitIdle(ctx.getDevice());  // 等待设备空闲，确保所有渲染完成
+
+    // 清理 ImGui（必须在其他 Vulkan 资源销毁前）
+    imguiManager.cleanup();
 
     // 按 reverse-init 顺序清理各 Manager
     cmdManager.cleanup();     // 释放命令缓冲和命令池

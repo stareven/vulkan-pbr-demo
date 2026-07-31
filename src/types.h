@@ -154,3 +154,31 @@ struct alignas(16) UBO_Shadow {
     float _pad;             // 填充, 凑齐 16 字节, 偏移 76
     // 总计: 80 字节 (必须是 16 的倍数)
 };
+
+// ============================================================================
+// 渲染统计信息 - 用于 ImGui 显示
+// ============================================================================
+// 每帧更新的渲染统计信息,包括:
+//   - 性能指标: FPS, 帧时间
+//   - 渲染统计: Draw Calls, 三角形数量
+//   - 资源统计: Descriptor Sets, Uniform Buffers, Textures 数量
+struct RenderStats {
+    // 性能指标
+    float fps = 0.0f;           // 帧率 (每秒帧数)
+    float frameTime = 0.0f;     // 帧时间 (毫秒)
+
+    // 渲染统计
+    uint32_t drawCalls = 0;     // 本帧 Draw Call 数量
+    uint32_t triangles = 0;     // 本帧绘制的三角形数量
+
+    // 资源统计
+    uint32_t descriptorSets = 0;    // Descriptor Sets 数量
+    uint32_t uniformBuffers = 0;    // Uniform Buffers 数量
+    uint32_t textures = 0;          // Textures 数量
+
+    // 重置每帧统计 (Draw Calls 和 Triangles)
+    void resetPerFrame() {
+        drawCalls = 0;
+        triangles = 0;
+    }
+};

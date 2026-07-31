@@ -7,6 +7,9 @@
 #include <string>
 #include "types.h"
 
+// 前向声明
+class ImGuiManager;
+
 // ============================================================================
 // 渲染管线 - 渲染通道、管线布局、图形管线、帧缓冲、主 pass 录制
 // ============================================================================
@@ -136,12 +139,14 @@ public:
     // 参数 planeVbo/planeIbo/planeIndexCount：地面的顶点缓冲、索引缓冲、索引数
     // 参数 emissiveEnabled：是否启用了自发光效果
     // 参数 glassEnabled：是否启用了玻璃效果（使用半透明管线）
+    // 参数 imguiManager：可选的 ImGui 管理器，用于在渲染通道结束前绘制 ImGui 界面
     void recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExtent2D extent,
                         const std::vector<VkDescriptorSet>& descSets,
                         VkDescriptorSet matGroundSet,
                         VkBuffer sphereVbo, VkBuffer sphereIbo, uint32_t sphereIndexCount,
                         VkBuffer planeVbo, VkBuffer planeIbo, uint32_t planeIndexCount,
-                        bool emissiveEnabled, bool glassEnabled) const;
+                        bool emissiveEnabled, bool glassEnabled,
+                        ImGuiManager* imguiManager = nullptr) const;
 
     // 获取内部对象的句柄（只读访问）
     VkRenderPass getRenderPass() const { return renderPass; }

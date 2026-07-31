@@ -20,9 +20,29 @@ set(SOURCES
     src/shadow_system.cpp
     src/vulkan_utils.cpp
     src/mesh.cpp
+    src/imgui_manager.cpp
 )
 
+# Dear ImGui (with GLFW and Vulkan backends)
+set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+add_library(imgui STATIC
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
+)
+target_include_directories(imgui PUBLIC
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+)
+target_link_libraries(imgui PUBLIC glfw Vulkan::Vulkan)
+
 add_executable(vulkan_pbr ${SOURCES})
+
+# 链接 Dear ImGui
+target_link_libraries(vulkan_pbr PRIVATE imgui)
 
 # Vulkan SDK
 find_package(Vulkan REQUIRED)

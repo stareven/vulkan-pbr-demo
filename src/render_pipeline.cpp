@@ -1,6 +1,7 @@
 #include "render_pipeline.h"
 #include "vulkan_utils.h"
 #include "types.h"
+#include "imgui_manager.h"
 using namespace vulkan;
 
 #include <array>
@@ -494,7 +495,8 @@ void RenderPipeline::recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExte
                                     VkDescriptorSet matGroundSet,
                                     VkBuffer sphereVbo, VkBuffer sphereIbo, uint32_t sphereIndexCount,
                                     VkBuffer planeVbo, VkBuffer planeIbo, uint32_t planeIndexCount,
-                                    bool emissiveEnabled, bool glassEnabled) const {
+                                    bool emissiveEnabled, bool glassEnabled,
+                                    ImGuiManager* imguiManager) const {
     // 重置命令缓冲，准备重新录制
     // RESET_BIT_NONE：不释放任何资源，只是重置状态
     vkResetCommandBuffer(cmd, 0);
@@ -597,6 +599,13 @@ void RenderPipeline::recordMainPass(VkCommandBuffer cmd, uint32_t imgIdx, VkExte
 
     // 执行索引绘制调用
     vkCmdDrawIndexed(cmd, sphereIndexCount, 1, 0, 0, 0);
+
+    // --- 渲染 ImGui 界面 ---
+    // 在所有 3D 几何体绘制完成后，渲染 ImGui 统计界面
+    // ImGui 使用自己的管线（禁用深度测试，启用 alpha 混合）
+    if (imguiManager) {
+        imguiManager->render(cmd);
+    }
 
     // 结束渲染通道
     vkCmdEndRenderPass(cmd);

@@ -45,6 +45,9 @@ private:
     //   - 重建完成后重置为 false
     bool framebufferResized = false;
 
+    // ImGui 窗口是否可见 (F1 键控制)
+    bool showImGui = true;
+
 public:
     // 构造函数: 只保存参数, 不创建窗口
     // 实际创建在 create() 中, 便于分离构造和初始化
@@ -88,6 +91,12 @@ public:
 
     // 设置 resize 标志 (GLFW 回调中调用)
     void notifyFramebufferResized() { framebufferResized = true; }
+
+    // ImGui 窗口是否应该显示
+    bool shouldShowImGui() const { return showImGui; }
+
+    // 切换 ImGui 窗口显示状态 (F1 键触发)
+    void toggleImGui() { showImGui = !showImGui; }
 
     // 销毁窗口: 释放 GLFW 窗口资源
     // 必须在 Vulkan 实例销毁前调用 (Surface 依赖窗口)
