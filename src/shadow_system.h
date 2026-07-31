@@ -77,8 +77,8 @@ private:
     std::vector<VkDescriptorSet> descSetsShadowSampler;        // 采样器 descriptor sets（每帧一个）
 
     // --- 光源视角矩阵 ---
-    Mat4 lightView;   // 从光源位置看向场景原点的 view matrix
-    Mat4 lightProj;   // 正交投影矩阵（方向光），近裁剪面 0.1，远裁剪面 50
+    glm::mat4 lightView;   // 从光源位置看向场景原点的 view matrix
+    glm::mat4 lightProj;   // 正交投影矩阵（方向光），近裁剪面 0.1，远裁剪面 50
 
 public:
     ShadowSystem() = default;
@@ -91,7 +91,7 @@ public:
 
     // 更新阴影 UBO：计算光源的 lightSpaceMatrix（proj * view）和光源位置
     // model 参数当前未使用，保留用于未来扩展
-    void updateShadowUBO(uint32_t imageIndex, const Mat4& model);
+    void updateShadowUBO(uint32_t imageIndex, const glm::mat4& model);
 
     // 清理所有 Vulkan 资源（按依赖逆序销毁）
     void cleanup();
@@ -113,8 +113,8 @@ public:
     VkDescriptorSetLayout getSamplerLayout() const { return dslShadowSampler; }
     VkDescriptorSet getShadowSet(uint32_t index) const { return descSetsShadow[index]; }
     VkDescriptorSet getSamplerSet(uint32_t index) const { return descSetsShadowSampler[index]; }
-    const Mat4& getLightView() const { return lightView; }
-    const Mat4& getLightProj() const { return lightProj; }
+    const glm::mat4& getLightView() const { return lightView; }
+    const glm::mat4& getLightProj() const { return lightProj; }
 
 private:
     // 以下是内部资源创建方法，由 initialize() 按顺序调用

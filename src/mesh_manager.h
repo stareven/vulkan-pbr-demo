@@ -108,8 +108,8 @@ public:
     //   - materialPreset: 材质预设索引
     //   - glassEnabled: 玻璃模式开关
     //   - emissiveEnabled: 自发光开关
-    void updateUniformBuffers(uint32_t imageIndex, const Mat4& model, const Mat4& view, const Mat4& proj,
-                             const Mat4& lightSpaceMatrix, const Vec3& cameraPos,
+    void updateUniformBuffers(uint32_t imageIndex, const glm::mat4& model, const glm::mat4& view, const glm::mat4& proj,
+                             const glm::mat4& lightSpaceMatrix, const glm::vec3& cameraPos,
                              int materialPreset, bool glassEnabled, bool emissiveEnabled);
 
     // 销毁所有缓冲

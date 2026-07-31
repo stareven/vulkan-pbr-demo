@@ -24,9 +24,14 @@
 //       x = cos(pitch) * sin(yaw)
 //       y = sin(pitch)
 //       z = cos(pitch) * cos(yaw)
-//   - right: 右方向向量 = forward × up (叉积)
+//   - right: 右方向向量 = normalize(cross(worldUp, forward))
+//     (与 GLM lookAt 一致: worldUp × forward)
 //
-// 注意: 这是纯逻辑类, 不依赖 Vulkan, 只用到 math_utils.h 的 Vec3/Mat4
+// GLM 迁移说明:
+//   - 用 glm::lookAt 替代自定义 Mat4::lookAt
+//   - 用 glm::vec3 替代自定义 Vec3
+//   - 用 glm::mat4 替代自定义 Mat4
+//   - glm::lookAt 返回列主序矩阵, 可直接传给 GPU, 无需转置
 // ============================================================================
 class Camera {
 public:
@@ -52,18 +57,18 @@ public:
     void moveUp(float distance)      { position.y += distance; }
 
     // 获取视图矩阵:
-    //   - 调用 Mat4::lookAt, 传入相机位置/目标点/上方向
+    //   - 调用 glm::lookAt, 传入相机位置/目标点/上方向
     //   - 目标点 = position + forward (相机前方 1 单位处)
     //   - 上方向 = (0, 1, 0) (世界 Y 轴)
-    //   - 返回: 把世界坐标变换到相机空间的矩阵
-    Mat4 getViewMatrix() const {
-        return Mat4::lookAt(position, position + forward(), {0, 1, 0});
+    //   - 返回: 把世界坐标变换到相机空间的矩阵 (列主序, 可直接传给 GPU)
+    glm::mat4 getViewMatrix() const {
+        return glm::lookAt(position, position + forward(), glm::vec3(0, 1, 0));
     }
 
     // ---------- Getters ----------
 
     // 相机位置 (世界坐标)
-    const Vec3& getPosition() const { return position; }
+    const glm::vec3& getPosition() const { return position; }
 
     // 水平旋转角 (弧度)
     float getYaw()   const { return yaw; }
@@ -72,28 +77,28 @@ public:
     float getPitch() const { return pitch; }
 
     // 直接设置位置 (WASD 之外的特殊用例, 比如重置相机)
-    void setPosition(const Vec3& p) { position = p; }
+    void setPosition(const glm::vec3& p) { position = p; }
 
 private:
     // 计算前方向向量 (单位向量):
     //   - 由 yaw (水平角) 和 pitch (垂直角) 计算
     //   - 公式: (cos(pitch)*sin(yaw), sin(pitch), cos(pitch)*cos(yaw))
     //   - 这是球坐标到直角坐标的转换
-    Vec3 forward() const {
+    glm::vec3 forward() const {
         return {std::cos(pitch) * std::sin(yaw),
                 std::sin(pitch),
                 std::cos(pitch) * std::cos(yaw)};
     }
 
     // 计算右方向向量 (单位向量):
-    //   - right = forward × up (叉积)
-    //   - 结果自动垂直于 forward 和 up
-    Vec3 right() const {
-        return forward().cross({0, 1, 0}).normalize();
+    //   - right = normalize(cross(worldUp, forward))
+    //   - 与 glm::lookAt 使用相同的叉积顺序
+    glm::vec3 right() const {
+        return glm::normalize(glm::cross(glm::vec3(0, 1, 0), forward()));
     }
 
     // 相机位置 (世界坐标), 默认 (0, 2, 5)
-    Vec3 position{0, 2, 5};
+    glm::vec3 position{0, 2, 5};
 
     // 水平旋转角 (弧度), 默认 π (面向 -Z 方向)
     float yaw   = 3.14159265f;   // π
