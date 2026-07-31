@@ -339,10 +339,15 @@ void PBRApp::drawFrame() {
     // --------------------------------------------------------------------------
     // 第5步：计算相机和投影矩阵
     // --------------------------------------------------------------------------
-    Mat4 view = camera.getViewMatrix();  // 获取相机视图矩阵（根据相机位置和朝向计算）
+    glm::mat4 view = camera.getViewMatrix();  // 获取相机视图矩阵（根据相机位置和朝向计算）
     float aspect = (float)swapchain.getExtent().width / (float)swapchain.getExtent().height;  // 计算宽高比
-    Mat4 proj = Mat4::perspective(45.0f * static_cast<float>(M_PI) / 180.0f, aspect, 0.1f, 100.0f);  // 透视投影矩阵（FOV 45°，近裁剪面 0.1m，远裁剪面 100m）
-    Mat4 model = Mat4::identity();  // 模型矩阵为单位矩阵（物体位于原点，无变换）
+    // GLM 透视投影 + Vulkan Y 翻转:
+    //   - glm::perspective 产生标准 OpenGL 透视矩阵 (Y 向上)
+    //   - Vulkan NDC 的 Y 向下, 所以需要乘一个 Y 翻转矩阵
+    //   - GLM_FORCE_DEPTH_ZERO_TO_ONE 已定义, 深度范围 [0,1]
+    glm::mat4 proj = glm::perspective(45.0f * static_cast<float>(M_PI) / 180.0f, aspect, 0.1f, 100.0f)
+                   * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, 1.0f));  // Y 翻转
+    glm::mat4 model = glm::mat4(1.0f);  // 模型矩阵为单位矩阵（物体位于原点，无变换）
 
     // --------------------------------------------------------------------------
     // 第6步：更新阴影 UBO
@@ -355,7 +360,7 @@ void PBRApp::drawFrame() {
     // 第7步：获取光源空间矩阵
     // --------------------------------------------------------------------------
     // 光源空间矩阵（用于主 pass 的 MVP UBO，以便 shader 做阴影坐标变换）
-    Mat4 lightSpaceMatrix = shadowSystem.getLightProj() * shadowSystem.getLightView();  // 光源投影矩阵 × 光源视图矩阵
+    glm::mat4 lightSpaceMatrix = shadowSystem.getLightProj() * shadowSystem.getLightView();  // 光源投影矩阵 × 光源视图矩阵
 
     // --------------------------------------------------------------------------
     // 第8步：更新主渲染 UBO

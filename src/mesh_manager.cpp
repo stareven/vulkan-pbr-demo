@@ -218,18 +218,18 @@ void MeshManager::createUniformBuffers(size_t imageCount) {
 //   - 根据 glassEnabled 调整透明度和折射率
 //   - 根据 emissiveEnabled 调整自发光
 // ----------------------------------------------------------------------------
-void MeshManager::updateUniformBuffers(uint32_t imageIndex, const Mat4& model, const Mat4& view, const Mat4& proj,
-                                       const Mat4& lightSpaceMatrix, const Vec3& cameraPos,
+void MeshManager::updateUniformBuffers(uint32_t imageIndex, const glm::mat4& model, const glm::mat4& view, const glm::mat4& proj,
+                                       const glm::mat4& lightSpaceMatrix, const glm::vec3& cameraPos,
                                        int materialPreset, bool glassEnabled, bool emissiveEnabled) {
     // 更新 MVP UBO
     {
         UBO_MVP ubo{};
-        // C++ 是行主序 (row-major), GLSL 是列主序 (column-major)
-        // 需要转置矩阵才能正确传递
-        ubo.model = model.transposed();
-        ubo.view = view.transposed();
-        ubo.proj = proj.transposed();
-        ubo.lightSpaceMatrix = lightSpaceMatrix.transposed();
+        // GLM 的 mat4 默认列主序, 与 GLSL 的 mat4 布局一致
+        // 可以直接 memcpy, 不需要转置
+        ubo.model = model;
+        ubo.view = view;
+        ubo.proj = proj;
+        ubo.lightSpaceMatrix = lightSpaceMatrix;
         ubo.cameraPos = cameraPos;
 
         // CPU 写入到 UBO
@@ -243,7 +243,7 @@ void MeshManager::updateUniformBuffers(uint32_t imageIndex, const Mat4& model, c
     {
         // 7 种材质预设 (albedo/metallic/roughness)
         struct MaterialPreset {
-            Vec3 albedo;
+            glm::vec3 albedo;
             float metallic;
             float roughness;
         };

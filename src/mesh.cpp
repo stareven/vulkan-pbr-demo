@@ -37,9 +37,9 @@ std::vector<Vertex> generateSphere(int rings, int sectors) {
             float x = std::sin(phi) * std::cos(theta);
             float y = std::cos(phi);
             float z = std::sin(phi) * std::sin(theta);
-            Vec3 p{x * R, y * R, z * R};  // 位置
-            Vec3 n = p.normalize();        // 法向量 (单位球 = 位置向量归一化)
-            Vec2 uv{float(s) / sectors, float(r) / rings};  // UV 坐标
+            glm::vec3 p{x * R, y * R, z * R};  // 位置
+            glm::vec3 n = glm::normalize(p);   // 法向量 (单位球 = 位置向量归一化)
+            glm::vec2 uv{float(s) / sectors, float(r) / rings};  // UV 坐标
             verts.push_back({p, n, uv});
         }
     }

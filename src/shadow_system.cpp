@@ -531,17 +531,17 @@ void ShadowSystem::createShadowSamplerDescriptorSets(uint32_t imageCount, VkImag
 //   - 上方向: (0, 1, 0)，Y 轴向上
 //   - Projection: 正交投影（模拟平行光），范围 [-8, 8]，近裁剪面 0.1，远裁剪面 50
 //
-// lightSpaceMatrix = proj * view（转置后传给着色器，因为 GLSL 默认列主序）
-void ShadowSystem::updateShadowUBO(uint32_t imageIndex, const Mat4& model) {
-    Vec3 lightPos{10, 10, 10};
-    Vec3 lightTarget{0, 0, 0};
-    Vec3 lightUp{0, 1, 0};
+// lightSpaceMatrix = proj * view (GLM 返回列主序, 可直接传给 GLSL)
+void ShadowSystem::updateShadowUBO(uint32_t imageIndex, const glm::mat4& model) {
+    glm::vec3 lightPos{10, 10, 10};
+    glm::vec3 lightTarget{0, 0, 0};
+    glm::vec3 lightUp{0, 1, 0};
 
-    lightView = Mat4::lookAt(lightPos, lightTarget, lightUp);
-    lightProj = Mat4::ortho(-8, 8, -8, 8, 0.1f, 50.0f);
+    lightView = glm::lookAt(lightPos, lightTarget, lightUp);
+    lightProj = glm::ortho(-8.0f, 8.0f, -8.0f, 8.0f, 0.1f, 50.0f);
 
     UBO_Shadow ubo{};
-    ubo.lightSpaceMatrix = (lightProj * lightView).transposed();  // 转置以适应 GLSL 列主序
+    ubo.lightSpaceMatrix = lightProj * lightView;  // GLM 矩阵已经是列主序
     ubo.lightPos = lightPos;
 
     // 映射内存并写入 UBO 数据

@@ -64,8 +64,8 @@ inline const std::vector<const char*>& deviceExtensions() {
 // 注意: 这个结构没有用 alignas, 因为 Vulkan 会按紧凑布局绑定,
 //       只要 shader 里用 std430 或匹配 layout 即可
 struct Vertex {
-    Vec3 pos, normal;  // 位置 + 法向量, 各 12 字节
-    Vec2 uv;           // 纹理坐标, 8 字节
+    glm::vec3 pos, normal;  // 位置 + 法向量, 各 12 字节
+    glm::vec2 uv;           // 纹理坐标, 8 字节
     // 总计: 32 字节/顶点
 };
 
@@ -83,9 +83,9 @@ struct Vertex {
 //   - lightSpaceMatrix: 光源空间的 VP 矩阵, 用于阴影贴图采样
 //   - cameraPos: 相机位置, 用于 PBR 光照计算 (视角方向)
 struct alignas(16) UBO_MVP {
-    Mat4 model, view, proj;        // 3 个矩阵, 各 64 字节, 共 192 字节
-    Mat4 lightSpaceMatrix;         // 光源 VP 矩阵, 64 字节, 偏移 192
-    Vec3 cameraPos;                // 相机位置, 12 字节, 偏移 256
+    glm::mat4 model, view, proj;        // 3 个矩阵, 各 64 字节, 共 192 字节
+    glm::mat4 lightSpaceMatrix;         // 光源 VP 矩阵, 64 字节, 偏移 192
+    glm::vec3 cameraPos;                // 相机位置, 12 字节, 偏移 256
     float _pad;                    // 填充 4 字节, 凑齐 16 字节对齐, 偏移 268
     // 总计: 272 字节 (必须是 16 的倍数)
 };
@@ -100,9 +100,9 @@ struct alignas(16) UBO_MVP {
 //   - intensity: 光源强度 (float, 4 字节)
 //   - 填充: 凑齐 32 字节 (16 字节对齐)
 struct UBOLight {
-    Vec3 position;    // 光源位置, 12 字节 + 4 字节填充 = 16 字节, 偏移 0
+    glm::vec3 position;    // 光源位置, 12 字节 + 4 字节填充 = 16 字节, 偏移 0
     float _pad0;      // 填充, 凑齐 vec3 的 16 字节对齐
-    Vec3 color;       // 光源颜色 (RGB), 12 字节, 偏移 16
+    glm::vec3 color;       // 光源颜色 (RGB), 12 字节, 偏移 16
     float intensity;  // 光源强度, 4 字节, 偏移 28
     // 总计: 32 字节 (std140 下结构体大小是 16 的倍数)
 };
@@ -124,18 +124,18 @@ struct UBOLight {
 //   - emissiveStrength: 自发光强度
 // 所有成员都用 padding 凑齐 16 字节对齐, 符合 std140 规范
 struct alignas(16) UBO_Material {
-    Vec3 albedo;          // 基础颜色, 偏移 0
+    glm::vec3 albedo;          // 基础颜色, 偏移 0
     float metallic;       // 金属度, 偏移 12
     float roughness;      // 粗糙度, 偏移 16
     float ao;             // 环境光遮蔽, 偏移 20
     float ior;            // 折射率, 偏移 24
     float opacity;        // 不透明度, 偏移 28
     UBOLight lights[4];   // 4 个光源, 各 32 字节, 共 128 字节, 偏移 32 -> 160
-    Vec3 ambientLight;    // 环境光颜色, 偏移 160
+    glm::vec3 ambientLight;    // 环境光颜色, 偏移 160
     float _pad1;          // 填充, 凑齐 16 字节, 偏移 172
-    Vec3 cameraPos;       // 相机位置, 偏移 176
+    glm::vec3 cameraPos;       // 相机位置, 偏移 176
     float _pad2;          // 填充, 凑齐 16 字节, 偏移 188
-    Vec3 emissive;        // 自发光颜色, 偏移 192
+    glm::vec3 emissive;        // 自发光颜色, 偏移 192
     float emissiveStrength; // 自发光强度, 偏移 204
     // 总计: 208 字节 (matches GLSL std140 布局)
 };
@@ -149,8 +149,8 @@ struct alignas(16) UBO_Material {
 // 主渲染 pass 会采样阴影贴图, 用 lightSpaceMatrix 把像素坐标变换到光源空间,
 // 比较深度值判断是否在阴影中
 struct alignas(16) UBO_Shadow {
-    Mat4 lightSpaceMatrix;  // 光源 VP 矩阵, 64 字节, 偏移 0
-    Vec3 lightPos;          // 光源位置, 12 字节, 偏移 64
+    glm::mat4 lightSpaceMatrix;  // 光源 VP 矩阵, 64 字节, 偏移 0
+    glm::vec3 lightPos;          // 光源位置, 12 字节, 偏移 64
     float _pad;             // 填充, 凑齐 16 字节, 偏移 76
     // 总计: 80 字节 (必须是 16 的倍数)
 };
